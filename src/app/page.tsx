@@ -126,6 +126,51 @@ export default function Home() {
     const [purchaseWhatsapp, setPurchaseWhatsapp] = useState('');
     const [purchaseQuantity, setPurchaseQuantity] = useState(1);
     const [emailError, setEmailError] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [pollCount, setPollCount] = useState(0);
+
+    // Polling logic to check for full results
+    React.useEffect(() => {
+        let timer: NodeJS.Timeout;
+
+        if (isProcessing) {
+            timer = setInterval(async () => {
+                console.log('Polling for full results...');
+                try {
+                    const response = await axios.post(`/api/search?full=true`, {
+                        rubro,
+                        provincia,
+                        localidades
+                    });
+
+                    const leads = response.data.leads || [];
+                    const hasFullData = leads.some((l: Lead) => l.email || l.whatsapp || l.telefono2);
+
+                    if (hasFullData) {
+                        setResults(leads);
+                        setIsProcessing(false);
+                        setIsLoading(false);
+                        setError(null);
+                        clearInterval(timer);
+                    } else {
+                        setPollCount(prev => prev + 1);
+                        if (pollCount > 60) { // Timeout after 5 minutes (5s * 60)
+                            setIsProcessing(false);
+                            setIsLoading(false);
+                            setError('El procesamiento está tardando más de lo esperado. Te avisaremos por WhatsApp.');
+                            clearInterval(timer);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Polling error:', err);
+                }
+            }, 5000); // Every 5 seconds
+        }
+
+        return () => {
+            if (timer) clearInterval(timer);
+        };
+    }, [isProcessing, rubro, provincia, localidades, pollCount]);
 
     const handleProvinciaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setProvincia(e.target.value);
@@ -181,8 +226,17 @@ export default function Home() {
             console.error(err);
             setError(err.response?.data?.error || 'Error al buscar. Intente nuevamente.');
         } finally {
-            setIsLoading(false);
+            if (!isProcessing) {
+                setIsLoading(false);
+            }
         }
+    };
+
+    // This will be called when the user starts the payment process
+    const handlePayInitiated = () => {
+        setIsProcessing(true);
+        setPollCount(0);
+        setError('Estamos procesando tus resultados... Esto puede demorar unos minutos.');
     };
 
     const verifyPayment = async () => {
@@ -561,24 +615,26 @@ export default function Home() {
                                                 </div>
 
                                                 {/* Checkout Button */}
-                                                <MercadoPagoButton
-                                                    amount={purchaseQuantity * 100}
-                                                    searchId="" // Will be generated server-side
-                                                    clientPhone={`+549${purchaseWhatsapp}`}
-                                                    clientEmail={purchaseEmail}
-                                                    quantity={purchaseQuantity}
-                                                    rubro={rubro}
-                                                    provincia={provincia}
-                                                    localidades={localidades}
-                                                    disabled={(!purchaseEmail && !purchaseWhatsapp) || !!emailError || (!!purchaseWhatsapp && purchaseWhatsapp.length < 10)}
-                                                    className={`w-full py-4 rounded-xl font-extrabold text-xl shadow-lg transition flex items-center justify-center gap-3 text-white
-                                                    ${(purchaseEmail || purchaseWhatsapp) && !emailError && (purchaseWhatsapp.length >= 10 || !purchaseWhatsapp)
-                                                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 transform hover:-translate-y-1'
-                                                            : 'bg-gray-400 cursor-not-allowed'}
-                                                `}
-                                                >
-                                                    <>PAGAR CON MERCADO PAGO</>
-                                                </MercadoPagoButton>
+                                                <div onClick={handlePayInitiated}>
+                                                    <MercadoPagoButton
+                                                        amount={purchaseQuantity * 100}
+                                                        searchId="" // Will be generated server-side
+                                                        clientPhone={`+549${purchaseWhatsapp}`}
+                                                        clientEmail={purchaseEmail}
+                                                        quantity={purchaseQuantity}
+                                                        rubro={rubro}
+                                                        provincia={provincia}
+                                                        localidades={localidades}
+                                                        disabled={(!purchaseEmail && !purchaseWhatsapp) || !!emailError || (!!purchaseWhatsapp && purchaseWhatsapp.length < 10)}
+                                                        className={`w-full py-4 rounded-xl font-extrabold text-xl shadow-lg transition flex items-center justify-center gap-3 text-white
+                                                        ${(purchaseEmail || purchaseWhatsapp) && !emailError && (purchaseWhatsapp.length >= 10 || !purchaseWhatsapp)
+                                                                ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 transform hover:-translate-y-1'
+                                                                : 'bg-gray-400 cursor-not-allowed'}
+                                                    `}
+                                                    >
+                                                        <>PAGAR CON MERCADO PAGO</>
+                                                    </MercadoPagoButton>
+                                                </div>
 
                                             </div>
                                             <p className="mt-4 text-xs text-gray-400">

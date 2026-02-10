@@ -141,10 +141,24 @@ export async function POST(req: NextRequest) {
             instagram: null
         }));
 
-        // Return top 3 as preview
+        // Check if full results are requested (post-payment)
+        const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
+
+        if (isFullRequest) {
+            // Return all leads without masking
+            return NextResponse.json({
+                count: totalCount,
+                leads: sanitizedLeads.map(l => ({ ...l, isWhatsappValid: !!l.whatsapp }))
+            });
+        }
+
+        // Default: Return top 3 as masked preview
         const previewLeads = sanitizedLeads.slice(0, 3);
         const maskedLeads = previewLeads.map((lead: any) => ({
             ...lead,
+            email: maskEmail(lead.email || ''),
+            whatsapp: maskPhone(lead.whatsapp || ''),
+            telefono2: maskPhone(lead.telefono2 || ''),
             isWhatsappValid: false
         }));
 
