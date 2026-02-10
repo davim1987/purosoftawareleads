@@ -12,6 +12,9 @@ interface MercadoPagoButtonProps {
     clientPhone: string;
     clientEmail: string;
     quantity: number;
+    rubro: string;
+    provincia: string;
+    localidades: string[];
     className?: string;
     disabled?: boolean;
     children?: React.ReactNode;
@@ -23,6 +26,9 @@ export default function MercadoPagoButton({
     clientPhone,
     clientEmail,
     quantity,
+    rubro,
+    provincia,
+    localidades,
     className = "",
     disabled = false,
     children
@@ -42,7 +48,10 @@ export default function MercadoPagoButton({
                     amount,
                     clientPhone,
                     clientEmail,
-                    quantity
+                    quantity,
+                    rubro,
+                    provincia,
+                    localidades
                 }),
             });
 

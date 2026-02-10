@@ -6,7 +6,7 @@ const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN!
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { searchId, amount, clientPhone, clientEmail, quantity = 1 } = body;
+        const { searchId, amount, clientPhone, clientEmail, quantity = 1, rubro, provincia, localidades } = body;
 
         // Generate searchId server-side if not provided
         const finalSearchId = searchId || `SEARCH-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -40,7 +40,10 @@ export async function POST(req: NextRequest) {
                 metadata: {
                     client_phone: clientPhone,
                     client_email: clientEmail,
-                    quantity: Number(quantity)
+                    quantity: Number(quantity),
+                    rubro: rubro,
+                    provincia: provincia,
+                    localidades: Array.isArray(localidades) ? localidades.join(', ') : localidades
                 }
             }
         });

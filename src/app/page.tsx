@@ -434,17 +434,17 @@ export default function Home() {
                                                                 {/* Email */}
                                                                 <div className="flex items-center gap-2">
                                                                     <FaEnvelope className={lead.email && lead.email !== 'null' ? "text-orange-500" : "text-gray-300"} />
-                                                                    <span className={lead.email && lead.email !== 'null' ? "text-gray-900" : "text-gray-400 italic"}>
-                                                                        {(lead.email && lead.email !== 'null') ? lead.email : 'No disponible'}
+                                                                    <span className={lead.email && lead.email !== 'null' ? "text-gray-900" : "text-gray-400 italic font-medium"}>
+                                                                        {(lead.email && lead.email !== 'null') ? lead.email : '📧 Disponible al comprar'}
                                                                     </span>
                                                                 </div>
                                                                 {/* Social */}
                                                                 <div className="flex items-center gap-2 text-xs">
-                                                                    <span className={`px-2 py-0.5 rounded ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-100 text-pink-800' : 'bg-gray-100 text-gray-400'}`}>
-                                                                        IG: {(lead.instagram && lead.instagram !== 'null') ? 'Sí' : 'No'}
+                                                                    <span className={`px-2 py-0.5 rounded border ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-100 text-pink-800 border-pink-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                                        IG: {(lead.instagram && lead.instagram !== 'null') ? 'Sí' : 'Disponible'}
                                                                     </span>
-                                                                    <span className={`px-2 py-0.5 rounded ${lead.facebook && lead.facebook !== 'null' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-400'}`}>
-                                                                        FB: {(lead.facebook && lead.facebook !== 'null') ? 'Sí' : 'No'}
+                                                                    <span className={`px-2 py-0.5 rounded border ${lead.facebook && lead.facebook !== 'null' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                                        FB: {(lead.facebook && lead.facebook !== 'null') ? 'Sí' : 'Disponible'}
                                                                     </span>
                                                                 </div>
                                                             </td>
@@ -567,6 +567,9 @@ export default function Home() {
                                                     clientPhone={`+549${purchaseWhatsapp}`}
                                                     clientEmail={purchaseEmail}
                                                     quantity={purchaseQuantity}
+                                                    rubro={rubro}
+                                                    provincia={provincia}
+                                                    localidades={localidades}
                                                     disabled={(!purchaseEmail && !purchaseWhatsapp) || !!emailError || (!!purchaseWhatsapp && purchaseWhatsapp.length < 10)}
                                                     className={`w-full py-4 rounded-xl font-extrabold text-xl shadow-lg transition flex items-center justify-center gap-3 text-white
                                                     ${(purchaseEmail || purchaseWhatsapp) && !emailError && (purchaseWhatsapp.length >= 10 || !purchaseWhatsapp)

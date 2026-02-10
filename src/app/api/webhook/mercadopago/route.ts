@@ -14,14 +14,17 @@ export async function POST(req: NextRequest) {
 
             if (paymentData.status === 'approved') {
                 const payload = {
-                    tipo: 'pago',
-                    action: 'delivery',
+                    tipo: 'consulta_clientepago',
+                    action: 'deep_scrape',
                     searchId: paymentData.external_reference,
                     phone: paymentData.metadata.client_phone,
                     email: paymentData.metadata.client_email,
                     payment_id: paymentData.id,
                     monto_pagado: paymentData.transaction_amount,
-                    cantidad_leads: paymentData.metadata.quantity || 1
+                    cantidad_leads: paymentData.metadata.quantity || 1,
+                    rubro: paymentData.metadata.rubro,
+                    provincia: paymentData.metadata.provincia,
+                    localidades: paymentData.metadata.localidades
                 };
 
                 try {

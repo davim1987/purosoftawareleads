@@ -68,116 +68,64 @@ export async function POST(req: NextRequest) {
         }
 
 
-        console.log(`Searching DB for rubro: "${rubro}" in localities:`, localidades);
-        // Step A: Search DB via Supabase
-        console.log(`Searching DB for rubro: "${rubro}" (Accent Insensitive) in localities:`, localidades);
+        console.log(`Searching for preview: rubro: "${rubro}" in localities:`, localidades);
 
-        // We use textSearch with 'websearch' type and 'spanish' config to handle accents (á -> a)
-        // and stemming.
-        let { data: leads, error } = await supabase
-            .from('leads_google_maps')
-            .select('*')
-            .textSearch('rubro', rubro, {
-                config: 'spanish',
-                type: 'websearch'
-            })
-            .in('localidad', localidades);
+        // Step A: Call n8n for Preview (Count and Names only)
+        let leads: any[] = [];
+        let totalCount = 0;
 
-        // If textSearch returns nothing (rare if rubro is simple), we might want to fallback to ilike 
-        // just for simple substrings, but usually FTS is better for "analisis" vs "análisis".
+        try {
+            const webhookUrl = process.env.N8N_WEBHOOK_URL;
+            if (webhookUrl) {
+                console.log('Triggering n8n search for preview...');
+                const n8nResponse = await axios.post(webhookUrl, {
+                    tipo: 'preview_search', // Indicate this is just for preview
+                    rubro,
+                    provincia,
+                    localidades
+                });
 
-        if (error) {
-            console.error('Supabase query error DETAILED:', error);
-            // ... logs ...
-            leads = [];
-        } else {
-            console.log(`DB Search returned ${leads?.length || 0} results.`);
-        }
+                const data = n8nResponse.data;
 
-        if (!leads) leads = [];
-
-        // Step B: Hybrid Search (n8n trigger)
-        let totalCount = leads.length;
-        if (leads.length === 0) {
-            try {
-                const webhookUrl = process.env.N8N_WEBHOOK_URL;
-                if (webhookUrl) {
-                    console.log('Triggering n8n search fallback...');
-                    const n8nResponse = await axios.post(webhookUrl, {
-                        rubro,
-                        provincia,
-                        localidades
-                    });
-
-                    const data = n8nResponse.data;
-
-                    // Handle both direct array or the { cantidad_leads, leads } format
-                    let newLeads = [];
-                    if (Array.isArray(data)) {
-                        newLeads = data;
-                        totalCount = data.length;
-                    } else if (data && data.leads) {
-                        newLeads = data.leads;
-                        totalCount = data.cantidad_leads || data.leads.length;
-                    }
-
-                    if (newLeads.length > 0) {
-                        // Map n8n leads to app format
-                        const mappedLeads = newLeads.map((l: any) => ({
-                            id: l.id || `n8n-${Math.random().toString(36).substring(2, 9)}`,
-                            rubro: l.Rubro || l.rubro || rubro,
-                            nombre: l.Nombre || l.nombre || '',
-                            razon_social: l.Nombre || l.razon_social || l.nombre || '',
-                            direccion: l.Direccion || l.direccion || '',
-                            localidad: l.Localidad || l.localidad || '',
-                            provincia: l.Provincia || l.provincia || provincia,
-                            email: l.Email || l.email || '',
-                            whatsapp: l.Whatssap || l.whatsapp || '',
-                            telefono2: l.Telefono2 || l.telefono2 || '',
-                            'whatssap secundario': l.WhatssapSecundario || l['whatssap secundario'] || '',
-                            instagram: l.instagram || null,
-                            web: l.Web || l.web || null
-                        }));
-
-                        leads = mappedLeads;
-                    }
+                // Handle response format
+                let newLeads = [];
+                if (Array.isArray(data)) {
+                    newLeads = data;
+                    totalCount = data.length;
+                } else if (data && data.leads) {
+                    newLeads = data.leads;
+                    totalCount = data.cantidad_leads || data.leads.length;
                 }
-            } catch (error) {
-                console.error('n8n search error:', error);
+
+                if (newLeads.length > 0) {
+                    // Map names only for preview (sanitize as per user request "sin datos de contacto")
+                    leads = newLeads.map((l: any) => ({
+                        id: l.id || `preview-${Math.random().toString(36).substring(2, 9)}`,
+                        nombre: l.Nombre || l.nombre || 'Nombre Reservado',
+                        rubro: l.Rubro || l.rubro || rubro,
+                        localidad: l.Localidad || l.localidad || '',
+                        provincia: l.Provincia || l.provincia || provincia,
+                        // Contact data is empty in this phase
+                        direccion: null,
+                        email: null,
+                        whatsapp: null,
+                        telefono2: null,
+                        'whatssap secundario': null,
+                        web: null,
+                        instagram: null
+                    }));
+                }
             }
+        } catch (error) {
+            console.error('n8n preview search error:', error);
+            return NextResponse.json({ error: 'Error al conectar con el servicio de búsqueda' }, { status: 500 });
         }
 
-        // Deduplicate
-        const uniqueLeadsMap = new Map();
-        if (leads) {
-            leads.forEach((item: any) => uniqueLeadsMap.set(item.id, item));
-        }
-        const uniqueLeads = Array.from(uniqueLeadsMap.values());
-
-        // Score leads by completeness
-        const scoreLead = (l: any) => {
-            let score = 0;
-            if (l.email && l.email !== 'null' && l.email !== '') score++;
-            if (l.whatsapp && l.whatsapp !== 'null' && l.whatsapp !== '') score++;
-            if (l.telefono2 && l.telefono2 !== 'null' && l.telefono2 !== '') score++;
-            if (l['whatssap secundario'] && l['whatssap secundario'] !== 'null' && l['whatssap secundario'] !== '') score++;
-            if (l.direccion && l.direccion !== 'null' && l.direccion !== '') score++;
-            if (l.instagram && l.instagram !== 'null' && l.instagram !== '') score++;
-            if (l.web && l.web !== 'null' && l.web !== '') score++;
-            return score;
-        };
-
-        // Sort by quality and take top 3
-        const sortedLeads = uniqueLeads.sort((a: any, b: any) => scoreLead(b) - scoreLead(a));
-        const previewLeads = sortedLeads.slice(0, 3);
-
+        // Return top 3 as preview
+        const previewLeads = leads.slice(0, 3);
         const maskedLeads = previewLeads.map((lead: any) => ({
             ...lead,
-            email: maskEmail(lead.email || ''),
-            whatsapp: maskPhone(lead.whatsapp || ''),
-            telefono2: maskPhone(lead.telefono2 || ''),
-            'whatssap secundario': maskPhone(lead['whatssap secundario'] || ''),
-            isWhatsappValid: !!lead.whatsapp
+            isWhatsappValid: false // Placeholder for preview
         }));
 
         // Send webhook notification for free search (with totalCount)
