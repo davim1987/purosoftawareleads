@@ -463,7 +463,7 @@ export default function Home() {
                                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
                                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rubro</th>
                                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp</th>
                                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contactos</th>
                                                     </tr>
                                                 </thead>
@@ -477,12 +477,12 @@ export default function Home() {
                                                                 {lead.rubro}
                                                             </td>
                                                             <td className="px-6 py-4 text-sm text-gray-600">
-                                                                <div className="max-w-[150px] truncate" title={lead.direccion || undefined}>
-                                                                    {lead.direccion || `${lead.localidad}${lead.provincia ? `, ${lead.provincia}` : ''}`}
+                                                                <div className="max-w-[180px] truncate" title={lead.direccion || 'No disponible'}>
+                                                                    {lead.direccion && lead.direccion !== 'null' ? lead.direccion : 'No disponible'}
                                                                 </div>
                                                             </td>
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                                {lead.telefono2 && lead.telefono2 !== 'null' ? lead.telefono2 : (lead.whatsapp && lead.whatsapp !== 'null' ? lead.whatsapp : 'No disponible')}
+                                                                {lead.whatsapp && lead.whatsapp !== 'null' ? lead.whatsapp : (lead.telefono2 && lead.telefono2 !== 'null' ? lead.telefono2 : 'No disponible')}
                                                             </td>
                                                             <td className="px-6 py-4 text-sm text-gray-500 space-y-1">
                                                                 {/* Email */}
@@ -494,11 +494,11 @@ export default function Home() {
                                                                 </div>
                                                                 {/* Social */}
                                                                 <div className="flex items-center gap-2 text-xs">
-                                                                    <span className={`px-2 py-0.5 rounded border ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-100 text-pink-800 border-pink-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                                                        IG: {(lead.instagram && lead.instagram !== 'null') ? 'Sí' : 'Disponible'}
+                                                                    <span className={`px-2 py-0.5 rounded border flex items-center gap-1 ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-100 text-pink-800 border-pink-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                                        IG: {(lead.instagram && lead.instagram !== 'null') ? lead.instagram : 'Disponible'}
                                                                     </span>
-                                                                    <span className={`px-2 py-0.5 rounded border ${lead.facebook && lead.facebook !== 'null' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                                                        FB: {(lead.facebook && lead.facebook !== 'null') ? 'Sí' : 'Disponible'}
+                                                                    <span className={`px-2 py-0.5 rounded border flex items-center gap-1 ${lead.facebook && lead.facebook !== 'null' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                                                                        FB: {(lead.facebook && lead.facebook !== 'null') ? lead.facebook : 'Disponible'}
                                                                     </span>
                                                                 </div>
                                                             </td>

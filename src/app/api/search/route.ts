@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/db';
 import axios from 'axios';
-import { maskEmail, maskPhone } from '@/lib/utils';
+import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
 
 // Simple in-memory fallback for rate limiting if DB fails
 // Map<IP, { count: number, resetTime: number }>
@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
 
         // Step A: Search DB via Supabase first
         try {
-            const { data: dbLeads, error: dbError } = await supabase
+            // First try Text Search (High quality matching)
+            let { data: dbLeads, error: dbError } = await supabase
                 .from('leads_google_maps')
                 .select('*')
                 .textSearch('rubro', rubro, {
@@ -84,7 +85,21 @@ export async function POST(req: NextRequest) {
                 })
                 .in('localidad', localidades);
 
-            if (!dbError && dbLeads && dbLeads.length > 0) {
+            // Fallback: If Text Search fails or returns nothing, try ILIKE (Simpler but more inclusive)
+            if (dbError || !dbLeads || dbLeads.length === 0) {
+                console.log('Text search found nothing or failed, trying ILIKE...');
+                const { data: ilikeLeads, error: ilikeError } = await supabase
+                    .from('leads_google_maps')
+                    .select('*')
+                    .ilike('rubro', `%${rubro}%`)
+                    .in('localidad', localidades);
+
+                if (!ilikeError && ilikeLeads) {
+                    dbLeads = ilikeLeads;
+                }
+            }
+
+            if (dbLeads && dbLeads.length > 0) {
                 console.log(`Leads found in DB: ${dbLeads.length}`);
                 leads = dbLeads;
                 totalCount = dbLeads.length;
@@ -124,41 +139,57 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Map names only for preview (sanitize as per user request "sin datos de contacto")
-        const sanitizedLeads = leads.map((l: any) => ({
+        // Scoring function to prioritize "best" leads (more complete data)
+        const getQualityScore = (l: any) => {
+            let score = 0;
+            if (l.Email || l.email) score += 10;
+            if (l.Whatssap || l.whatsapp) score += 10;
+            if (l.instagram) score += 5;
+            if (l.Direccion || l.direccion) score += 5;
+            if (l.Web || l.web) score += 3;
+            if (l.Facebook || l.facebook) score += 3;
+            return score;
+        };
+
+        // Sort by quality so best leads are at the top
+        leads.sort((a, b) => getQualityScore(b) - getQualityScore(a));
+
+        // Map and sanitize leads
+        const mappedLeads = leads.map((l: any) => ({
             id: l.id || `preview-${Math.random().toString(36).substring(2, 9)}`,
             nombre: l.Nombre || l.nombre || 'Nombre Reservado',
             rubro: l.Rubro || l.rubro || rubro,
+            direccion: l.Direccion || l.direccion || 'No disponible',
             localidad: l.Localidad || l.localidad || '',
             provincia: l.Provincia || l.provincia || provincia,
-            // Contact data is empty in this phase
-            direccion: null,
-            email: null,
-            whatsapp: null,
-            telefono2: null,
-            'whatssap secundario': null,
-            web: null,
-            instagram: null
+            email: l.Email || l.email || null,
+            whatsapp: l.Whatssap || l.whatsapp || null,
+            telefono2: l.telefono2 || null,
+            web: l.Web || l.web || null,
+            instagram: l.instagram || null,
+            facebook: l.Facebook || l.facebook || null
         }));
 
         // Check if full results are requested (post-payment)
         const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
 
         if (isFullRequest) {
-            // Return all leads without masking
             return NextResponse.json({
                 count: totalCount,
-                leads: sanitizedLeads.map(l => ({ ...l, isWhatsappValid: !!l.whatsapp }))
+                leads: mappedLeads.map(l => ({ ...l, isWhatsappValid: !!l.whatsapp }))
             });
         }
 
-        // Default: Return top 3 as masked preview
-        const previewLeads = sanitizedLeads.slice(0, 3);
+        // Preview: Mask sensitive data and take top 3
+        const previewLeads = mappedLeads.slice(0, 3);
         const maskedLeads = previewLeads.map((lead: any) => ({
             ...lead,
+            direccion: lead.direccion === 'No disponible' || !lead.direccion ? 'No disponible' : lead.direccion,
             email: maskEmail(lead.email || ''),
             whatsapp: maskPhone(lead.whatsapp || ''),
             telefono2: maskPhone(lead.telefono2 || ''),
+            instagram: maskSocial(lead.instagram || ''),
+            facebook: maskSocial(lead.facebook || ''),
             isWhatsappValid: false
         }));
 

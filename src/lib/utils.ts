@@ -17,6 +17,12 @@ export function maskPhone(phone: string | null): string {
     return `${visibleStart}** **${visibleEnd}`;
 }
 
+export function maskSocial(text: string | null): string {
+    if (!text) return '';
+    if (text.length <= 4) return text + '*'.repeat(3);
+    return text.substring(0, 3) + '*'.repeat(text.length - 3);
+}
+
 export function formatCurrency(amount: number): string {
     return new Intl.NumberFormat('es-AR', {
         style: 'currency',
