@@ -1,0 +1,62 @@
+export const PROVINCIAS = [
+    { label: 'Buenos Aires', value: 'Buenos Aires' },
+    { label: 'Catamarca', value: 'Catamarca' },
+    { label: 'Chaco', value: 'Chaco' },
+    { label: 'Chubut', value: 'Chubut' },
+    { label: 'Ciudad Autónoma de Buenos Aires', value: 'CABA' },
+    { label: 'Córdoba', value: 'Córdoba' },
+    { label: 'Corrientes', value: 'Corrientes' },
+    { label: 'Entre Ríos', value: 'Entre Ríos' },
+    { label: 'Formosa', value: 'Formosa' },
+    { label: 'Jujuy', value: 'Jujuy' },
+    { label: 'La Pampa', value: 'La Pampa' },
+    { label: 'La Rioja', value: 'La Rioja' },
+    { label: 'Mendoza', value: 'Mendoza' },
+    { label: 'Misiones', value: 'Misiones' },
+    { label: 'Neuquén', value: 'Neuquén' },
+    { label: 'Río Negro', value: 'Río Negro' },
+    { label: 'Salta', value: 'Salta' },
+    { label: 'San Juan', value: 'San Juan' },
+    { label: 'San Luis', value: 'San Luis' },
+    { label: 'Santa Cruz', value: 'Santa Cruz' },
+    { label: 'Santa Fe', value: 'Santa Fe' },
+    { label: 'Santiago del Estero', value: 'Santiago del Estero' },
+    { label: 'Tierra del Fuego', value: 'Tierra del Fuego' },
+    { label: 'Tucumán', value: 'Tucumán' },
+];
+
+// Expanded list of major localities for all provinces
+// Expanded list of major localities for all provinces, supporting Zones for BA
+export const LOCALIDADES: Record<string, string[] | Record<string, string[]>> = {
+    'Buenos Aires': {
+        'GBA Norte': ['San Isidro', 'Vicente López', 'Tigre', 'San Fernando', 'San Martín', 'Escobar', 'Pilar', 'Malvinas Argentinas', 'José C. Paz', 'San Miguel'],
+        'GBA Sur': ['Avellaneda', 'Lomas de Zamora', 'Quilmes', 'Lanús', 'Ezeiza', 'Berazategui', 'Florencio Varela', 'Esteban Echeverría', 'Almirante Brown'],
+        'GBA Oeste': ['La Matanza', 'Morón', 'Merlo', 'Moreno', 'Hurlingham', 'Ituzaingó', 'Tres de Febrero'],
+        'Interior': ['La Plata', 'Mar del Plata', 'Bahía Blanca', 'Tandil', 'San Nicolás', 'Pergamino', 'Olavarría', 'Junín', 'Zárate', 'Campana', 'Necochea']
+    },
+    'CABA': ['Palermo', 'Recoleta', 'Belgrano', 'Caballito', 'Nuñez', 'San Telmo', 'Villa Urquiza', 'Flores', 'Microcentro', 'Puerto Madero', 'Barracas', 'La Boca', 'Almagro', 'Balvanera', 'Villa Crespo'],
+    'Catamarca': ['San Fernando del Valle de Catamarca', 'Andalgalá', 'Tinogasta', 'Belén', 'Santa María'],
+    'Chaco': ['Resistencia', 'Sáenz Peña', 'Villa Ángela', 'Barranqueras', 'Castelli'],
+    'Chubut': ['Comodoro Rivadavia', 'Trelew', 'Puerto Madryn', 'Esquel', 'Rawson'],
+    'Córdoba': ['Córdoba Capital', 'Villa Carlos Paz', 'Río Cuarto', 'Alta Gracia', 'Villa María', 'San Francisco', 'Jesús María', 'La Falda', 'Cosquín'],
+    'Corrientes': ['Corrientes Capital', 'Goya', 'Paso de los Libres', 'Curuzú Cuatiá', 'Mercedes'],
+    'Entre Ríos': ['Paraná', 'Concordia', 'Gualeguaychú', 'Concepción del Uruguay', 'Villaguay'],
+    'Formosa': ['Formosa Capital', 'Clorinda', 'Pirané', 'El Colorado'],
+    'Jujuy': ['San Salvador de Jujuy', 'San Pedro', 'Libertador General San Martín', 'Palpalá', 'Perico'],
+    'La Pampa': ['Santa Rosa', 'General Pico', 'Toay', 'Realicó'],
+    'La Rioja': ['La Rioja Capital', 'Chilecito', 'Aimogasta', 'Chamical'],
+    'Mendoza': ['Mendoza Capital', 'San Rafael', 'Godoy Cruz', 'Guaymallén', 'Las Heras', 'Maipú', 'Luján de Cuyo'],
+    'Misiones': ['Posadas', 'Oberá', 'Eldorado', 'Puerto Iguazú', 'Apóstoles'],
+    'Neuquén': ['Neuquén Capital', 'San Martín de los Andes', 'Cutral Có', 'Plaza Huincul', 'Zapala', 'Villa La Angostura'],
+    'Río Negro': ['Viedma', 'Bariloche', 'General Roca', 'Cipolletti', 'Villa Regina'],
+    'Salta': ['Salta Capital', 'San Ramón de la Nueva Orán', 'Tartagal', 'General Güemes', 'Cafayate'],
+    'San Juan': ['San Juan Capital', 'Rawson', 'Rivadavia', 'Chimbas', 'Santa Lucía'],
+    'San Luis': ['San Luis Capital', 'Villa Mercedes', 'Merlo', 'La Punta'],
+    'Santa Cruz': ['Río Gallegos', 'Caleta Olivia', 'El Calafate', 'Pico Truncado'],
+    'Santa Fe': ['Rosario', 'Santa Fe Capital', 'Rafaela', 'Venado Tuerto', 'Reconquista', 'Santo Tomé'],
+    'Santiago del Estero': ['Santiago del Estero Capital', 'La Banda', 'Termas de Río Hondo', 'Frías'],
+    'Tierra del Fuego': ['Ushuaia', 'Río Grande', 'Tolhuin'],
+    'Tucumán': ['San Miguel de Tucumán', 'Yerba Buena', 'Concepción', 'Tafí Viejo', 'Banda del Río Salí'],
+};
+
+// Rubros removed as it's now free text
