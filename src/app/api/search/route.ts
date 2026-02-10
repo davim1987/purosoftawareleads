@@ -70,62 +70,82 @@ export async function POST(req: NextRequest) {
 
         console.log(`Searching for preview: rubro: "${rubro}" in localities:`, localidades);
 
-        // Step A: Call n8n for Preview (Count and Names only)
         let leads: any[] = [];
         let totalCount = 0;
 
+        // Step A: Search DB via Supabase first
         try {
-            const webhookUrl = process.env.N8N_WEBHOOK_URL;
-            if (webhookUrl) {
-                console.log('Triggering n8n search for preview...');
-                const n8nResponse = await axios.post(webhookUrl, {
-                    tipo: 'preview_search', // Indicate this is just for preview
-                    rubro,
-                    provincia,
-                    localidades
-                });
+            const { data: dbLeads, error: dbError } = await supabase
+                .from('leads_google_maps')
+                .select('*')
+                .textSearch('rubro', rubro, {
+                    config: 'spanish',
+                    type: 'websearch'
+                })
+                .in('localidad', localidades);
 
-                const data = n8nResponse.data;
-
-                // Handle response format
-                let newLeads = [];
-                if (Array.isArray(data)) {
-                    newLeads = data;
-                    totalCount = data.length;
-                } else if (data && data.leads) {
-                    newLeads = data.leads;
-                    totalCount = data.cantidad_leads || data.leads.length;
-                }
-
-                if (newLeads.length > 0) {
-                    // Map names only for preview (sanitize as per user request "sin datos de contacto")
-                    leads = newLeads.map((l: any) => ({
-                        id: l.id || `preview-${Math.random().toString(36).substring(2, 9)}`,
-                        nombre: l.Nombre || l.nombre || 'Nombre Reservado',
-                        rubro: l.Rubro || l.rubro || rubro,
-                        localidad: l.Localidad || l.localidad || '',
-                        provincia: l.Provincia || l.provincia || provincia,
-                        // Contact data is empty in this phase
-                        direccion: null,
-                        email: null,
-                        whatsapp: null,
-                        telefono2: null,
-                        'whatssap secundario': null,
-                        web: null,
-                        instagram: null
-                    }));
-                }
+            if (!dbError && dbLeads && dbLeads.length > 0) {
+                console.log(`Leads found in DB: ${dbLeads.length}`);
+                leads = dbLeads;
+                totalCount = dbLeads.length;
             }
-        } catch (error) {
-            console.error('n8n preview search error:', error);
-            return NextResponse.json({ error: 'Error al conectar con el servicio de búsqueda' }, { status: 500 });
+        } catch (dbErr) {
+            console.error('Supabase preview query error:', dbErr);
         }
 
+        // Step B: Hybrid Fallback to n8n if no results in DB
+        if (leads.length === 0) {
+            try {
+                const webhookUrl = process.env.N8N_WEBHOOK_URL;
+                if (webhookUrl) {
+                    console.log('No leads in DB. Triggering n8n search for preview...');
+                    const n8nResponse = await axios.post(webhookUrl, {
+                        tipo: 'preview_search',
+                        rubro,
+                        provincia,
+                        localidades
+                    });
+
+                    const data = n8nResponse.data;
+
+                    let newLeads = [];
+                    if (Array.isArray(data)) {
+                        newLeads = data;
+                        totalCount = data.length;
+                    } else if (data && data.leads) {
+                        newLeads = data.leads;
+                        totalCount = data.cantidad_leads || data.leads.length;
+                    }
+                    leads = newLeads;
+                }
+            } catch (error) {
+                console.error('n8n preview search error:', error);
+                // If it fails, we return what we have (nothing) but don't crash if we can't reach n8n
+            }
+        }
+
+        // Map names only for preview (sanitize as per user request "sin datos de contacto")
+        const sanitizedLeads = leads.map((l: any) => ({
+            id: l.id || `preview-${Math.random().toString(36).substring(2, 9)}`,
+            nombre: l.Nombre || l.nombre || 'Nombre Reservado',
+            rubro: l.Rubro || l.rubro || rubro,
+            localidad: l.Localidad || l.localidad || '',
+            provincia: l.Provincia || l.provincia || provincia,
+            // Contact data is empty in this phase
+            direccion: null,
+            email: null,
+            whatsapp: null,
+            telefono2: null,
+            'whatssap secundario': null,
+            web: null,
+            instagram: null
+        }));
+
         // Return top 3 as preview
-        const previewLeads = leads.slice(0, 3);
+        const previewLeads = sanitizedLeads.slice(0, 3);
         const maskedLeads = previewLeads.map((lead: any) => ({
             ...lead,
-            isWhatsappValid: false // Placeholder for preview
+            isWhatsappValid: false
         }));
 
         // Send webhook notification for free search (with totalCount)
