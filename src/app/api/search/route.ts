@@ -97,65 +97,83 @@ export async function POST(req: NextRequest) {
         if (!leads) leads = [];
 
         // Step B: Hybrid Search (n8n trigger)
-        if (leads.length < 5) {
+        let totalCount = leads.length;
+        if (leads.length === 0) {
             try {
                 const webhookUrl = process.env.N8N_WEBHOOK_URL;
                 if (webhookUrl) {
-                    console.log('Triggering n8n webhook...');
+                    console.log('Triggering n8n search fallback...');
                     const n8nResponse = await axios.post(webhookUrl, {
                         rubro,
                         provincia,
                         localidades
                     });
 
-                    const newLeads = n8nResponse.data;
+                    const data = n8nResponse.data;
 
-                    if (Array.isArray(newLeads) && newLeads.length > 0) {
-                        // Update DB with new leads
-                        // Supabase upsert
-                        const { error: upsertError } = await supabase
-                            .from('leads_google_maps')
-                            .upsert(newLeads, { onConflict: 'id' }); // Assuming 'id' is distinct key
+                    // Handle both direct array or the { cantidad_leads, leads } format
+                    let newLeads = [];
+                    if (Array.isArray(data)) {
+                        newLeads = data;
+                        totalCount = data.length;
+                    } else if (data && data.leads) {
+                        newLeads = data.leads;
+                        totalCount = data.cantidad_leads || data.leads.length;
+                    }
 
-                        if (upsertError) {
-                            console.error('Error upserting n8n leads:', upsertError);
-                        }
+                    if (newLeads.length > 0) {
+                        // Map n8n leads to app format
+                        const mappedLeads = newLeads.map((l: any) => ({
+                            id: l.id || `n8n-${Math.random().toString(36).substring(2, 9)}`,
+                            rubro: l.Rubro || l.rubro || rubro,
+                            nombre: l.Nombre || l.nombre || '',
+                            razon_social: l.Nombre || l.razon_social || l.nombre || '',
+                            direccion: l.Direccion || l.direccion || '',
+                            localidad: l.Localidad || l.localidad || '',
+                            provincia: l.Provincia || l.provincia || provincia,
+                            email: l.Email || l.email || '',
+                            whatsapp: l.Whatssap || l.whatsapp || '',
+                            telefono2: l.Telefono2 || l.telefono2 || '',
+                            'whatssap secundario': l.WhatssapSecundario || l['whatssap secundario'] || '',
+                            instagram: l.instagram || null,
+                            web: l.Web || l.web || null
+                        }));
 
-                        // Merge results
-                        // We append new leads to existing ones, filtering duplicates manually just in case
-                        const existingIds = new Set(leads.map((l: any) => l.id));
-                        const uniqueNewLeads = newLeads.filter((l: any) => !existingIds.has(l.id));
-                        leads = [...leads, ...uniqueNewLeads];
+                        leads = mappedLeads;
                     }
                 }
             } catch (error) {
-                console.error('n8n webhook error:', error);
+                console.error('n8n search error:', error);
             }
         }
 
-        // Mask Data
-        // Deduplicate again just to be safe
+        // Mask Data and limit to 3 for preview
+        // Deduplicate
         const uniqueLeadsMap = new Map();
-        leads.forEach((item: any) => uniqueLeadsMap.set(item.id, item));
+        if (leads) {
+            leads.forEach((item: any) => uniqueLeadsMap.set(item.id, item));
+        }
         const uniqueLeads = Array.from(uniqueLeadsMap.values());
 
-        const maskedLeads = uniqueLeads.map((lead: any) => ({
+        const previewLeads = uniqueLeads.slice(0, 3);
+
+        const maskedLeads = previewLeads.map((lead: any) => ({
             ...lead,
-            email: maskEmail(lead.email),
-            whatsapp: maskPhone(lead.whatsapp),
-            telefono2: maskPhone(lead.telefono2),
-            'whatssap secundario': maskPhone(lead['whatssap secundario']),
+            email: maskEmail(lead.email || ''),
+            whatsapp: maskPhone(lead.whatsapp || ''),
+            telefono2: maskPhone(lead.telefono2 || ''),
+            'whatssap secundario': maskPhone(lead['whatssap secundario'] || ''),
             isWhatsappValid: !!lead.whatsapp
         }));
 
-        // Send webhook notification for free search
+        // Send webhook notification for free search (with totalCount)
         try {
             const searchNotification = {
                 tipo: 'consulta_gratis',
                 rubro,
                 provincia,
                 localidades,
-                resultados_encontrados: maskedLeads.length,
+                resultados_encontrados: totalCount,
                 timestamp: new Date().toISOString()
             };
 
@@ -168,11 +186,10 @@ export async function POST(req: NextRequest) {
             });
         } catch (webhookError) {
             console.error('Error sending search notification webhook:', webhookError);
-            // Don't fail the request if webhook fails
         }
 
         return NextResponse.json({
-            count: maskedLeads.length,
+            count: totalCount,
             leads: maskedLeads
         });
 

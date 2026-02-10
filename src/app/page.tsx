@@ -160,7 +160,7 @@ export default function Home() {
         setCount(null);
 
         try {
-            const response = await axios.post('/api/search-n8n', {
+            const response = await axios.post('/api/search', {
                 rubro,
                 provincia,
                 localidades
