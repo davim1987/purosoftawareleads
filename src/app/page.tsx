@@ -16,6 +16,7 @@ interface Lead {
     whatsapp: string | null;
     web: string | null;
     localidad: string;
+    provincia?: string;
     instagram?: string;
     facebook?: string;
     telefono2?: string;
@@ -381,20 +382,9 @@ export default function Home() {
                 {/* Context for sorting */}
                 {(() => {
                     // Helper to count potential data points
-                    const scoreLead = (l: Lead) => {
-                        let score = 0;
-                        if (l.email && l.email !== 'null') score++;
-                        if (l.whatsapp && l.whatsapp !== 'null') score++;
-                        if (l.instagram && l.instagram !== 'null') score++;
-                        if (l.facebook && l.facebook !== 'null') score++;
-                        if (l.telefono2 && l.telefono2 !== 'null') score++;
-                        return score;
-                    };
-
-                    // Sort by completeness
-                    const sortedResults = [...results].sort((a, b) => scoreLead(b) - scoreLead(a));
-                    const top3 = sortedResults.slice(0, 3);
-                    const totalAvailable = results.length;
+                    // The API already returns the top 3 leads sorted by quality
+                    const top3 = results;
+                    const totalAvailable = count || 0;
 
                     return (
                         <>
@@ -418,7 +408,8 @@ export default function Home() {
                                                     <tr>
                                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
                                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rubro</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ubicación</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
                                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contactos</th>
                                                     </tr>
                                                 </thead>
@@ -431,18 +422,15 @@ export default function Home() {
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                                                 {lead.rubro}
                                                             </td>
+                                                            <td className="px-6 py-4 text-sm text-gray-600">
+                                                                <div className="max-w-[150px] truncate" title={lead.direccion || undefined}>
+                                                                    {lead.direccion || `${lead.localidad}${lead.provincia ? `, ${lead.provincia}` : ''}`}
+                                                                </div>
+                                                            </td>
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                                {lead.localidad}
+                                                                {lead.telefono2 && lead.telefono2 !== 'null' ? lead.telefono2 : (lead.whatsapp && lead.whatsapp !== 'null' ? lead.whatsapp : 'No disponible')}
                                                             </td>
                                                             <td className="px-6 py-4 text-sm text-gray-500 space-y-1">
-                                                                {/* Whatsapp */}
-                                                                <div className="flex items-center gap-2">
-                                                                    <FaWhatsapp className={lead.whatsapp && lead.whatsapp !== 'null' ? "text-green-500" : "text-gray-300"} />
-                                                                    <span className={lead.whatsapp && lead.whatsapp !== 'null' ? "text-gray-900 font-medium" : "text-gray-400 italic"}>
-                                                                        {(lead.whatsapp && lead.whatsapp !== 'null') ? lead.whatsapp : 'No disponible'}
-                                                                    </span>
-                                                                    {lead.isWhatsappValid && lead.whatsapp && lead.whatsapp !== 'null' && <FaCheck className="text-blue-500 text-xs" title="Validado" />}
-                                                                </div>
                                                                 {/* Email */}
                                                                 <div className="flex items-center gap-2">
                                                                     <FaEnvelope className={lead.email && lead.email !== 'null' ? "text-orange-500" : "text-gray-300"} />
@@ -450,7 +438,7 @@ export default function Home() {
                                                                         {(lead.email && lead.email !== 'null') ? lead.email : 'No disponible'}
                                                                     </span>
                                                                 </div>
-                                                                {/* IG/FB placeholder logic for clean UI */}
+                                                                {/* Social */}
                                                                 <div className="flex items-center gap-2 text-xs">
                                                                     <span className={`px-2 py-0.5 rounded ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-100 text-pink-800' : 'bg-gray-100 text-gray-400'}`}>
                                                                         IG: {(lead.instagram && lead.instagram !== 'null') ? 'Sí' : 'No'}

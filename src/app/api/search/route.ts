@@ -147,7 +147,6 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Mask Data and limit to 3 for preview
         // Deduplicate
         const uniqueLeadsMap = new Map();
         if (leads) {
@@ -155,7 +154,22 @@ export async function POST(req: NextRequest) {
         }
         const uniqueLeads = Array.from(uniqueLeadsMap.values());
 
-        const previewLeads = uniqueLeads.slice(0, 3);
+        // Score leads by completeness
+        const scoreLead = (l: any) => {
+            let score = 0;
+            if (l.email && l.email !== 'null' && l.email !== '') score++;
+            if (l.whatsapp && l.whatsapp !== 'null' && l.whatsapp !== '') score++;
+            if (l.telefono2 && l.telefono2 !== 'null' && l.telefono2 !== '') score++;
+            if (l['whatssap secundario'] && l['whatssap secundario'] !== 'null' && l['whatssap secundario'] !== '') score++;
+            if (l.direccion && l.direccion !== 'null' && l.direccion !== '') score++;
+            if (l.instagram && l.instagram !== 'null' && l.instagram !== '') score++;
+            if (l.web && l.web !== 'null' && l.web !== '') score++;
+            return score;
+        };
+
+        // Sort by quality and take top 3
+        const sortedLeads = uniqueLeads.sort((a: any, b: any) => scoreLead(b) - scoreLead(a));
+        const previewLeads = sortedLeads.slice(0, 3);
 
         const maskedLeads = previewLeads.map((lead: any) => ({
             ...lead,
