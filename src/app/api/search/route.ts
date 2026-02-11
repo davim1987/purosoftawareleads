@@ -1,11 +1,101 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/db';
 import axios from 'axios';
+import https from 'https';
 import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
+
+// Agent to allow self-signed certificates for the bot
+const httpsAgent = new https.Agent({
+    rejectUnauthorized: false
+});
 
 // Simple in-memory fallback for rate limiting if DB fails
 // Map<IP, { count: number, resetTime: number }>
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+// Helper for CSV Parsing
+function parseCSV(csvText: string) {
+    const lines = csvText.split('\n').filter(line => line.trim() !== '');
+    if (lines.length < 2) return [];
+
+    // Header logic: State machine to split by comma respecting quotes
+    const splitCSVLine = (line: string) => {
+        const result = [];
+        let cur = "";
+        let inQuote = false;
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                inQuote = !inQuote;
+            } else if (char === ',' && !inQuote) {
+                result.push(cur.trim().replace(/^"|"$/g, ''));
+                cur = "";
+            } else {
+                cur += char;
+            }
+        }
+        result.push(cur.trim().replace(/^"|"$/g, ''));
+        return result;
+    };
+
+    const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase());
+
+    return lines.slice(1).map(line => {
+        const values = splitCSVLine(line);
+        const obj: any = {};
+        headers.forEach((header, i) => {
+            obj[header] = values[i] || null;
+        });
+        return obj;
+    });
+}
+
+// Helper for Geolocation with Cache
+async function getGeolocation(localidad: string, provincia: string) {
+    try {
+        // 1. Check Cache
+        const { data: cached } = await supabase
+            .from('geolocalizacion')
+            .select('*')
+            .eq('localidad', localidad)
+            .eq('provincia', provincia)
+            .single();
+
+        if (cached) return { lat: cached.latitud || cached.lat, lon: cached.longitud || cached.lon };
+
+        // 2. Fallback to OpenStreetMap (Nominatim)
+        console.log(`Geolocating ${localidad}, ${provincia} via Nominatim...`);
+        const query = encodeURIComponent(`${localidad}, ${provincia}, Argentina`);
+        const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`, {
+            headers: { 'User-Agent': 'PurosoftwareBot/1.0' }
+        });
+
+        if (response.data && response.data.length > 0) {
+            const result = response.data[0];
+            const lat = parseFloat(result.lat);
+            const lon = parseFloat(result.lon);
+
+            // Save to cache with correct column names (latitud/longitud)
+            const { error: insertError } = await supabase.from('geolocalizacion').insert({
+                localidad,
+                provincia,
+                latitud: lat,
+                longitud: lon,
+                partido: result.display_name
+            });
+
+            if (insertError) {
+                console.error('Error saving geolocation to cache:', insertError);
+            }
+
+            return { lat, lon };
+        }
+        return null;
+    } catch (error) {
+        console.error('Geolocation error:', error);
+        return null;
+    }
+}
 
 async function checkRateLimit(ip: string): Promise<boolean> {
     const ONE_DAY = 24 * 60 * 60 * 1000;
@@ -55,7 +145,7 @@ export async function POST(req: NextRequest) {
     try {
         const ip = req.headers.get('x-forwarded-for') || 'unknown-ip';
         const body = await req.json();
-        const { rubro, provincia, localidades } = body;
+        const { rubro, provincia, localidades, searchId } = body;
 
         if (!rubro || !localidades || !Array.isArray(localidades) || localidades.length === 0) {
             return NextResponse.json({ error: 'Missing required fields: rubro, localidades[]' }, { status: 400 });
@@ -67,17 +157,21 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Rate limit exceeded. Try again in 24 hours.' }, { status: 429 });
         }
 
-
-        console.log(`Searching for preview: rubro: "${rubro}" in localities:`, localidades);
+        console.log(`Searching: rubro: "${rubro}" in localities:`, localidades);
 
         let leads: any[] = [];
         let totalCount = 0;
 
         // Step A: Search DB via Supabase first
         try {
+            const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
+            const targetTable = isFullRequest ? 'leads_google_maps' : 'leads_free_search';
+
+            console.log(`Searching in table: ${targetTable} (full=${isFullRequest})`);
+
             // First try Text Search (High quality matching)
             let { data: dbLeads, error: dbError } = await supabase
-                .from('leads_google_maps')
+                .from(targetTable)
                 .select('*')
                 .textSearch('rubro', rubro, {
                     config: 'spanish',
@@ -85,11 +179,10 @@ export async function POST(req: NextRequest) {
                 })
                 .in('localidad', localidades);
 
-            // Fallback: If Text Search fails or returns nothing, try ILIKE (Simpler but more inclusive)
+            // Fallback: If Text Search fails or returns nothing, try ILIKE
             if (dbError || !dbLeads || dbLeads.length === 0) {
-                console.log('Text search found nothing or failed, trying ILIKE...');
                 const { data: ilikeLeads, error: ilikeError } = await supabase
-                    .from('leads_google_maps')
+                    .from(targetTable)
                     .select('*')
                     .ilike('rubro', `%${rubro}%`)
                     .in('localidad', localidades);
@@ -99,44 +192,221 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            // If full request and nothing found in google_maps, fallback to free_search to at least show something
+            if (isFullRequest && (!dbLeads || dbLeads.length === 0)) {
+                console.log('No results in google_maps, checking free_search fallback...');
+                const { data: fallbackLeads } = await supabase
+                    .from('leads_free_search')
+                    .select('*')
+                    .ilike('rubro', `%${rubro}%`)
+                    .in('localidad', localidades);
+
+                if (fallbackLeads && fallbackLeads.length > 0) {
+                    dbLeads = fallbackLeads;
+                }
+            }
+
             if (dbLeads && dbLeads.length > 0) {
-                console.log(`Leads found in DB: ${dbLeads.length}`);
+                console.log(`Leads found in DB (${targetTable}): ${dbLeads.length}`);
                 leads = dbLeads;
                 totalCount = dbLeads.length;
             }
         } catch (dbErr) {
-            console.error('Supabase preview query error:', dbErr);
+            console.error('Supabase query error:', dbErr);
         }
 
-        // Step B: Hybrid Fallback to n8n if no results in DB
-        if (leads.length === 0) {
-            try {
-                const webhookUrl = process.env.N8N_WEBHOOK_URL;
-                if (webhookUrl) {
-                    console.log('No leads in DB. Triggering n8n search for preview...');
-                    const n8nResponse = await axios.post(webhookUrl, {
-                        tipo: 'preview_search',
-                        rubro,
-                        provincia,
-                        localidades
-                    });
+        // Step B: PS-Bot Fallback if no results in DB
+        if (leads.length === 0 && searchId) {
+            // --- STATE GUARD: Check if search is already in progress or completed ---
+            const { data: existingTracking } = await supabase
+                .from('search_tracking')
+                .select('status, total_leads')
+                .eq('id', searchId)
+                .single();
 
-                    const data = n8nResponse.data;
-
-                    let newLeads = [];
-                    if (Array.isArray(data)) {
-                        newLeads = data;
-                        totalCount = data.length;
-                    } else if (data && data.leads) {
-                        newLeads = data.leads;
-                        totalCount = data.cantidad_leads || data.leads.length;
-                    }
-                    leads = newLeads;
+            if (existingTracking) {
+                if (existingTracking.status === 'geolocating' || existingTracking.status === 'scraping' || existingTracking.status === 'processing') {
+                    console.log(`[Guard] Search ${searchId} is already in progress (${existingTracking.status}). Skipping new bot job.`);
+                    return NextResponse.json({ status: 'processing', searchId });
                 }
-            } catch (error) {
-                console.error('n8n preview search error:', error);
-                // If it fails, we return what we have (nothing) but don't crash if we can't reach n8n
+                if (existingTracking.status === 'completed') {
+                    console.log(`[Guard] Search ${searchId} is already completed. No leads found for query.`);
+                    return NextResponse.json({ leads: [], count: 0, status: 'completed' });
+                }
             }
+            // -----------------------------------------------------------------------
+
+            console.log(`Initializing tracking for SearchID: ${searchId}`);
+
+            // 1. Create Initial State synchronously
+            const { error: trackError } = await supabase.from('search_tracking').upsert({
+                id: searchId,
+                status: 'geolocating',
+                rubro,
+                localidad: localidades[0]
+            });
+
+            if (trackError) {
+                console.error('Error creating tracking record:', trackError);
+                return NextResponse.json({ error: 'Error initiating search tracking' }, { status: 500 });
+            }
+
+            // Initiate background process
+            (async () => {
+                const botBaseUrl = 'https://gmaps-simple-scraper.puro.software';
+                try {
+                    // 2. Geolocation
+                    console.log(`[Background] Geolocating for ${searchId}...`);
+                    const coords = await getGeolocation(localidades[0], provincia);
+                    if (!coords) throw new Error('Could not geolocation locality');
+
+                    // 3. Update to Scraping
+                    console.log(`[Background] Creating Bot Job for ${searchId}...`);
+                    await supabase.from('search_tracking').update({ status: 'scraping' }).eq('id', searchId);
+
+                    // 4. Create Bot Job (v1/jobs)
+                    const jobPayload = {
+                        name: `Job-${searchId.substring(0, 8)}`,
+                        keywords: [rubro],
+                        lang: "es",
+                        zoom: 14,
+                        lat: coords.lat.toString(),
+                        lon: coords.lon.toString(),
+                        fast_mode: true,
+                        radius: 5000,
+                        depth: 5,
+                        email: false,
+                        max_time: 600 // Increased to 10 minutes
+                    };
+
+                    const createJobResponse = await axios.post(`${botBaseUrl}/api/v1/jobs`, jobPayload, { httpsAgent });
+                    const jobId = createJobResponse.data.id || createJobResponse.data.ID;
+                    console.log(`[Background] Job created: ${jobId}`);
+
+                    // 5. Poll for Job Completion
+                    let jobStatus = 'pending';
+                    let attempts = 0;
+                    const maxAttempts = 120; // 10 minutes (5s * 120)
+
+                    while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'failed' && attempts < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, { httpsAgent });
+                        // Bot API v1 returns capitalized keys: Status, ID
+                        jobStatus = statusResponse.data.Status || statusResponse.data.status;
+                        console.log(`[Background] Job ${jobId} status: ${jobStatus}`);
+                        attempts++;
+                    }
+
+                    if (jobStatus === 'failed') throw new Error('Bot job failed');
+                    if (jobStatus !== 'ok' && jobStatus !== 'completed') throw new Error('Bot job timed out');
+
+                    // 6. Download Results (CSV)
+                    console.log(`[Background] Downloading results for ${jobId}...`);
+                    const downloadUrl = `${botBaseUrl}/api/v1/jobs/${jobId}/download`;
+                    const csvResponse = await axios.get(downloadUrl, { httpsAgent });
+                    const csvContent = csvResponse.data;
+                    const newLeads = parseCSV(csvContent);
+                    console.log(`[Background] Bot found ${newLeads.length} leads for ${searchId}`);
+
+                    if (newLeads.length > 0) {
+                        console.log(`[Background] Parsing ${newLeads.length} leads from CSV...`);
+
+                        // 7. Bulk Upsert in Supabase
+                        const leadsToInsert = newLeads.map(l => {
+                            // Extract category/rubro
+                            const botRubro = l.category || l.category_name || (l.keywords && l.keywords[0]) || l.main_category;
+
+                            // Handle social links and emails
+                            let instagram = l.instagram || l.instagram_url || l.ig_url || l.instagram_profile;
+                            let facebook = l.facebook || l.facebook_url || l.fb_url || l.facebook_profile;
+
+                            if (l.social_links) {
+                                try {
+                                    const social = typeof l.social_links === 'string' ? l.social_links : JSON.stringify(l.social_links);
+                                    if (social.includes('instagram.com')) {
+                                        const match = social.match(/instagram\.com\/[^\s,"]+/);
+                                        if (match) instagram = match[0];
+                                    }
+                                    if (social.includes('facebook.com')) {
+                                        const match = social.match(/facebook\.com\/[^\s,"]+/);
+                                        if (match) facebook = match[0];
+                                    }
+                                } catch (e) { }
+                            }
+
+                            // If we still don't have it, check other common keys
+                            if (!instagram && l.Socials) {
+                                try {
+                                    const socials = typeof l.Socials === 'string' ? l.Socials : JSON.stringify(l.Socials);
+                                    if (socials.includes('instagram.com')) instagram = socials.match(/instagram\.com\/[^\s,"]+/)?.[0];
+                                } catch (e) { }
+                            }
+
+                            // Email handling: prioritize extended_emails which bot often fills
+                            let email = l.extended_emails || l.email;
+                            if (!email && l.emails) {
+                                email = typeof l.emails === 'string' ? l.emails.split(',')[0] : l.emails[0];
+                            }
+
+                            return {
+                                nombre: l.title || l.name || l.nombre || 'Nombre Reservado',
+                                whatsapp: l.phone || l.whatsapp,
+                                web: l.website || l.web,
+                                email: email || 'No disponible',
+                                place_id: l.place_id || l.id || l.cid || `generated-${Math.random().toString(36).substring(7)}`,
+                                direccion: l.address || l.complete_address || l.direccion || 'No disponible',
+                                localidad: l.city || l.localidad || localidades[0], // Use searched locality
+                                rubro: botRubro || rubro,
+                                instagram: instagram || l.instagram || 'No disponible',
+                                facebook: facebook || l.facebook || 'No disponible'
+                            };
+                        });
+
+                        console.log(`[Background] Upserting ${leadsToInsert.length} leads to Free Search Table...`);
+                        const { error: upsertError } = await supabase
+                            .from('leads_free_search')
+                            .upsert(leadsToInsert, { onConflict: 'place_id' });
+
+                        if (upsertError) {
+                            console.error('[Background] Upsert error:', upsertError);
+                            console.log('[Background] Sample lead for debugging:', JSON.stringify(leadsToInsert[0]));
+                        } else {
+                            console.log(`[Background] Bulk upsert successful for ${searchId}`);
+                        }
+                    } else {
+                        console.log(`[Background] No leads found in CSV for ${searchId}`);
+                    }
+
+                    // 8. Complete
+                    console.log(`[Background] Updating search ${searchId} to completed with ${newLeads.length} leads`);
+                    const { error: finalStatusError } = await supabase
+                        .from('search_tracking')
+                        .update({
+                            status: 'completed',
+                            total_leads: newLeads.length
+                        })
+                        .eq('id', searchId);
+
+                    if (finalStatusError) console.error('[Background] Error updating final status:', finalStatusError);
+
+                } catch (error: any) {
+                    console.error('[Background] CRITICAL ERROR:', error);
+                    await supabase.from('search_tracking').update({
+                        status: 'error',
+                        error_message: error.message
+                    }).eq('id', searchId);
+                }
+            })();
+
+            return NextResponse.json({
+                status: 'processing',
+                searchId
+            });
+        }
+
+        // If no results and no searchId (old client or direct call), handle as legacy or return empty
+        if (leads.length === 0) {
+            return NextResponse.json({ count: 0, leads: [] });
         }
 
         // Scoring function to prioritize "best" leads (more complete data)
