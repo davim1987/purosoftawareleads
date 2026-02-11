@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
 
             // Initiate background process
             (async () => {
-                const botBaseUrl = 'https://gmaps-simple-scraper.puro.software';
+                const botBaseUrl = process.env.NEXT_PUBLIC_BOT_API_URL || 'https://gmaps-simple-scraper.puro.software';
                 try {
                     // 2. Geolocation
                     console.log(`[Background] Geolocating for ${searchId}...`);
@@ -474,7 +474,9 @@ export async function POST(req: NextRequest) {
                 timestamp: new Date().toISOString()
             };
 
-            await fetch('https://n8n-n8n.3htcbh.easypanel.host/webhook-test/lead', {
+            const n8nWebhookUrl = process.env.NEXT_PUBLIC_N8N_SEARCH_WEBHOOK_URL || 'https://n8n-n8n.3htcbh.easypanel.host/webhook-test/lead';
+
+            await fetch(n8nWebhookUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
