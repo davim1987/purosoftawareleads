@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({
             status: data.status,
-            error_message: data.error_message
+            error_message: data.error_message,
+            results: data.results,
+            count: data.total_leads,
+            bot_job_id: data.bot_job_id
         });
 
     } catch (error) {

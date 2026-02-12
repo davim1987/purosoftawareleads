@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import { PROVINCIAS, LOCALIDADES } from '@/lib/data';
 import { FaWhatsapp, FaEnvelope, FaSearch, FaCheck, FaExclamationTriangle, FaCreditCard } from 'react-icons/fa';
@@ -20,6 +21,7 @@ interface Lead {
     instagram?: string;
     facebook?: string;
     telefono2?: string;
+    horario?: string | null;
     isWhatsappValid: boolean;
 }
 
@@ -228,9 +230,23 @@ const sampleLeads: Lead[] = [
 ];
 
 function SampleResultsModal({ onClose }: { onClose: () => void }) {
+    React.useEffect(() => {
+        const handleEsc = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [onClose]);
+
     return (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full relative border border-gray-100 animate-scale-up overflow-hidden max-h-[90vh] flex flex-col">
+        <div
+            className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-fade-in cursor-pointer"
+            onClick={onClose}
+        >
+            <div
+                className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full relative border border-gray-100 animate-scale-up overflow-hidden max-h-[90vh] flex flex-col cursor-default"
+                onClick={(e) => e.stopPropagation()}
+            >
                 <button
                     onClick={onClose}
                     className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 text-3xl font-light transition cursor-pointer z-10"
@@ -239,13 +255,10 @@ function SampleResultsModal({ onClose }: { onClose: () => void }) {
                 </button>
 
                 <div className="text-center mb-6">
-                    <h3 className="text-3xl font-black text-gray-900 mb-2">Ejemplo de Resultados 📊</h3>
-                    <p className="text-gray-500 text-sm">
-                        Así es como verás los leads una vez que realices una búsqueda.
+                    <h3 className="text-3xl font-black text-gray-900 mb-1">Modo demostración</h3>
+                    <p className="text-gray-500 text-sm font-medium">
+                        Todos los datos son de conocimiento público
                     </p>
-                    <div className="mt-4 inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-4 py-1.5 rounded-full text-xs font-black border border-orange-100 shadow-sm">
-                        <span>MODO DEMOSTRACIÓN</span>
-                    </div>
                 </div>
 
                 <div className="overflow-x-auto flex-1 bg-gray-50 rounded-2xl border border-gray-100 mb-4 p-2">
@@ -254,41 +267,33 @@ function SampleResultsModal({ onClose }: { onClose: () => void }) {
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Nombre</th>
                                 <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Rubro</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Dirección</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Localidad</th>
                                 <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">WhatsApp</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Contactos</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Instagram</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Facebook</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Dirección</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {sampleLeads.map((lead) => (
-                                <tr key={lead.id} className="hover:bg-gray-50 transition">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{lead.nombre}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">{lead.rubro}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-500">
+                                <tr key={lead.id} className="hover:bg-gray-50 transition text-[13px]">
+                                    <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{lead.nombre}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-gray-600 font-medium">{lead.rubro}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-gray-600">{lead.localidad}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-blue-600 font-black">
+                                        <div className="flex items-center gap-1">
+                                            {lead.whatsapp}
+                                            <FaCheck className="text-green-500 text-[10px]" />
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-pink-600 font-bold">
+                                        {lead.instagram || 'N/A'}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-blue-800 font-bold">
+                                        {lead.facebook || 'N/A'}
+                                    </td>
+                                    <td className="px-6 py-4 text-gray-500">
                                         <div className="max-w-[150px] truncate" title={lead.direccion || ''}>{lead.direccion}</div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-black">
-                                        {lead.whatsapp}
-                                    </td>
-                                    <td className="px-6 py-4 text-sm text-gray-500 space-y-1">
-                                        <div className="flex items-center gap-2">
-                                            <FaEnvelope className={lead.email ? "text-orange-500" : "text-gray-300"} />
-                                            <span className={lead.email ? "text-gray-900 font-medium" : "text-gray-400 italic"}>
-                                                {lead.email || '📧 Solo disponible en versión full'}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 text-xs">
-                                            {lead.instagram && (
-                                                <span className="px-2 py-0.5 rounded border bg-pink-100 text-pink-800 border-pink-200 font-bold">
-                                                    IG: {lead.instagram}
-                                                </span>
-                                            )}
-                                            {lead.facebook && (
-                                                <span className="px-2 py-0.5 rounded border bg-blue-100 text-blue-800 border-blue-200 font-bold">
-                                                    FB: {lead.facebook}
-                                                </span>
-                                            )}
-                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -309,7 +314,7 @@ function SampleResultsModal({ onClose }: { onClose: () => void }) {
     );
 }
 
-export default function Home() {
+function LeadsApp() {
     const [rubro, setRubro] = useState('');
     const [provincia, setProvincia] = useState('');
     const [localidades, setLocalidades] = useState<string[]>([]);
@@ -324,7 +329,7 @@ export default function Home() {
 
     // Search-specific states
     const [searchId, setSearchId] = useState<string | null>(null);
-    const [searchStatus, setSearchStatus] = useState<'idle' | 'geolocating' | 'scraping' | 'completed' | 'error'>('idle');
+    const [searchStatus, setSearchStatus] = useState<string>('idle');
     const [isProcessing, setIsProcessing] = useState(false); // Polling for bot or MP
     const [isInitialSearch, setIsInitialSearch] = useState(false); // Polling for bot
     const [pollCount, setPollCount] = useState(0);
@@ -336,10 +341,20 @@ export default function Home() {
     const [purchaseQuantity, setPurchaseQuantity] = useState(1);
     const [emailError, setEmailError] = useState('');
 
-    // 1. Rehydration: Load active search from localStorage
-    React.useEffect(() => {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
+    // 1. Rehydration: Load active search from localStorage or URL
+    useEffect(() => {
+        const urlSearchId = searchParams.get('searchId');
         const savedSearch = localStorage.getItem('active_search');
-        if (savedSearch) {
+
+        if (urlSearchId) {
+            // Priority: URL Search ID for recovery
+            setSearchId(urlSearchId);
+            setIsInitialSearch(true);
+            setSearchStatus('scraping');
+        } else if (savedSearch) {
             const { id, rubro: sRubro, provincia: sProv, localidades: sLocs, timestamp } = JSON.parse(savedSearch);
             // Check if older than 24h
             if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
@@ -352,7 +367,7 @@ export default function Home() {
                 localStorage.removeItem('active_search');
             }
         }
-    }, []);
+    }, [searchParams]);
 
     // 2. Initial Search Polling (Direct Bot Integration)
     React.useEffect(() => {
@@ -363,16 +378,32 @@ export default function Home() {
                 console.log('Polling for bot progress...', searchId);
                 try {
                     const response = await axios.get(`/api/search/status?id=${searchId}`);
-                    const { status, error_message } = response.data;
+                    const { status, error_message, results: polledResults, count: polledCount, bot_job_id } = response.data;
+
+                    if (bot_job_id && !searchParams.get('searchId')) {
+                        // Sync with URL for recovery
+                        const params = new URLSearchParams(searchParams.toString());
+                        params.set('searchId', searchId);
+                        router.replace(`/?${params.toString()}`);
+                    }
 
                     if (status === 'completed') {
                         setIsInitialSearch(false);
-                        setIsLoading(false); // Reset loading state
+                        setIsLoading(false);
                         localStorage.removeItem('active_search');
-                        handleSearch(true); // Call search again to get results from DB
+
+                        // Use results directly from Status API for free search
+                        if (polledResults) {
+                            setResults(polledResults);
+                            setCount(polledCount || 0);
+                            setPurchaseQuantity(polledCount > 0 ? polledCount : 1);
+                            setSearchStatus('completed');
+                        } else {
+                            handleSearch(true); // Fallback to DB if no results in status
+                        }
                     } else if (status === 'error') {
                         setIsInitialSearch(false);
-                        setIsLoading(false); // Reset loading state
+                        setIsLoading(false);
                         setSearchStatus('error');
                         setError(error_message || 'Error en el bot de búsqueda.');
                         clearInterval(timer);
@@ -430,6 +461,24 @@ export default function Home() {
         };
     }, [isProcessing, rubro, provincia, localidades, pollCount]);
 
+    const calculateProgress = (status: string) => {
+        if (status === 'completed') return 100;
+        if (status === 'error' || status === 'idle') return 0;
+        if (status === 'geolocating') return 5;
+        if (status === 'scraping') return 10;
+
+        // Parse "Procesando X (1/5)..."
+        const match = status.match(/\((\d+)\/(\d+)\)/);
+        if (match) {
+            const current = parseInt(match[1]);
+            const total = parseInt(match[2]);
+            // Map 1/5 to a range between 10 and 95
+            const progress = 10 + ((current / total) * 85);
+            return Math.min(Math.floor(progress), 95);
+        }
+        return 0;
+    };
+
     // 4. Cancel Search Logic
     const handleCancelSearch = () => {
         setIsInitialSearch(false);
@@ -438,6 +487,11 @@ export default function Home() {
         setSearchStatus('idle');
         setError(null);
         localStorage.removeItem('active_search');
+
+        // Clear URL
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('searchId');
+        router.replace(`/?${params.toString()}`);
     };
 
     const handleProvinciaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -476,30 +530,33 @@ export default function Home() {
         }
 
         try {
-            // Generate UUID if starting new search
-            const currentSearchId = fromPolling ? searchId : crypto.randomUUID();
-            if (!fromPolling) {
-                setSearchId(currentSearchId);
+            const response = await axios.post('/api/search', {
+                rubro,
+                provincia,
+                localidades
+            });
+
+            // Extract the searchId (which is the bot jobId) from the response
+            const serverSearchId = response.data.searchId;
+
+            if (response.data.status === 'processing') {
+                setSearchId(serverSearchId);
+                setIsInitialSearch(true);
+                setSearchStatus('scraping');
+
+                // Update URL for recovery
+                const params = new URLSearchParams(searchParams.toString());
+                params.set('searchId', serverSearchId);
+                router.replace(`/?${params.toString()}`);
+
                 // Save to localStorage for resilience
                 localStorage.setItem('active_search', JSON.stringify({
-                    id: currentSearchId,
+                    id: serverSearchId,
                     rubro,
                     provincia,
                     localidades,
                     timestamp: Date.now()
                 }));
-            }
-
-            const response = await axios.post('/api/search', {
-                rubro,
-                provincia,
-                localidades,
-                searchId: currentSearchId
-            });
-
-            if (response.data.status === 'processing') {
-                setIsInitialSearch(true);
-                setSearchStatus('geolocating');
                 return;
             }
 
@@ -782,31 +839,46 @@ export default function Home() {
 
                     {/* Progress Bar & Status */}
                     {(isLoading || isInitialSearch) && searchStatus !== 'idle' && (
-                        <div className="mt-8 space-y-4">
-                            <div className="flex justify-between text-sm font-medium text-blue-900">
-                                <span>{searchStatus === 'geolocating' ? '📍 Geolocalizando...' :
-                                    searchStatus === 'scraping' ? '🔍 Buscando negocios...' :
-                                        searchStatus === 'completed' ? '✅ ¡Listo!' :
-                                            searchStatus === 'error' ? '❌ Error en la búsqueda' : '⚙️ Procesando...'}</span>
-                                <span>{searchStatus === 'geolocating' ? '30%' :
-                                    searchStatus === 'scraping' ? '70%' :
-                                        searchStatus === 'completed' ? '100%' :
-                                            searchStatus === 'error' ? '0%' : '10%'}</span>
+                        <div className="mt-8 space-y-6">
+                            <div className="flex flex-col items-center">
+                                <div className="h-16 flex items-center justify-center overflow-hidden w-full relative">
+                                    {searchStatus.startsWith('Procesando') ? (
+                                        <div key={searchStatus} className="flex flex-col items-center animate-locality-ticker">
+                                            <span className="text-2xl font-black text-blue-600 tracking-tighter uppercase italic">
+                                                {searchStatus.split('Procesando ')[1]?.split(' (')[0]}
+                                            </span>
+                                            <span className="text-[10px] font-black text-blue-300 uppercase tracking-widest mt-1">
+                                                PROCESANDO ZONA {searchStatus.match(/\d+\/\d+/)?.[0]}
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <span className="text-lg font-bold text-blue-900 animate-pulse">
+                                            {searchStatus === 'completed' ? '✅ ¡BÚSQUEDA FINALIZADA!' :
+                                                searchStatus === 'error' ? '❌ ERROR EN EL PROCESO' :
+                                                    searchStatus === 'geolocating' ? '⚙️ GEOLOCALIZANDO...' : '⌛ INICIANDO SCRAPER...'}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="w-full mt-4 flex items-center gap-4">
+                                    <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200 shadow-inner">
+                                        <div
+                                            className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                            style={{ width: `${calculateProgress(searchStatus)}%` }}
+                                        ></div>
+                                    </div>
+                                    <span className="text-xs font-black text-blue-500 w-8">{calculateProgress(searchStatus)}%</span>
+                                </div>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                                <div
-                                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-1000"
-                                    style={{ width: searchStatus === 'geolocating' ? '30%' : (searchStatus === 'scraping' ? '70%' : (searchStatus === 'completed' ? '100%' : '10%')) }}
-                                ></div>
-                            </div>
+
                             <div className="flex flex-col items-center gap-3">
-                                <p className="text-center text-xs text-gray-500 animate-pulse italic">
-                                    {searchStatus === 'geolocating' ? 'Estamos obteniendo las coordenadas de la zona...' :
-                                        'El bot de Google Maps está extrayendo información en tiempo real.'}
+                                <p className="text-center text-[10px] text-gray-400 font-medium uppercase tracking-widest">
+                                    {searchStatus === 'geolocating' ? 'Estamos preparando el mapa de búsqueda...' :
+                                        'No cierres esta pestaña. Los resultados aparecerán abajo automáticamente.'}
                                 </p>
                                 <button
                                     onClick={handleCancelSearch}
-                                    className="text-xs font-bold text-red-500 hover:text-red-700 underline transition cursor-pointer"
+                                    className="text-[10px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors cursor-pointer border-b border-transparent hover:border-red-600"
                                 >
                                     Cancelar Búsqueda
                                 </button>
@@ -867,48 +939,62 @@ export default function Home() {
                                     <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 mb-8">
                                         <div className="overflow-x-auto">
                                             <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-gray-50">
-                                                    <tr>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rubro</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contactos</th>
-                                                    </tr>
-                                                </thead>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rubro</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Localidad</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instagram</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facebook</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
                                                 <tbody className="bg-white divide-y divide-gray-200">
                                                     {top3.map((lead) => (
                                                         <tr key={lead.id} className="hover:bg-gray-50 transition">
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
-                                                                {lead.nombre || 'Nombre no disponible'}
+                                                                <div className="flex flex-col">
+                                                                    <span>{lead.nombre || 'Nombre no disponible'}</span>
+                                                                    {lead.horario && lead.horario !== 'No disponible' && (
+                                                                        <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+                                                                            🕒 {lead.horario}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                             </td>
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                                                 {lead.rubro}
                                                             </td>
-                                                            <td className="px-6 py-4 text-sm text-gray-600">
-                                                                <div className="max-w-[180px] truncate" title={lead.direccion || 'No disponible'}>
-                                                                    {lead.direccion && lead.direccion !== 'null' ? lead.direccion : 'No disponible'}
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">
+                                                                {lead.localidad || 'N/A'}
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    {lead.whatsapp && lead.whatsapp !== 'null' ? lead.whatsapp : (lead.telefono2 && lead.telefono2 !== 'null' ? lead.telefono2 : 'No disponible')}
+                                                                    {(lead.whatsapp || lead.telefono2) && (
+                                                                        <FaCheck className="text-green-500 text-[10px]" title="Número verificado" />
+                                                                    )}
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                                {lead.whatsapp && lead.whatsapp !== 'null' ? lead.whatsapp : (lead.telefono2 && lead.telefono2 !== 'null' ? lead.telefono2 : 'No disponible')}
+                                                            <td className="px-6 py-4 whitespace-nowrap text-xs">
+                                                                <span className={`px-2 py-1 rounded-full border flex items-center justify-center gap-1 font-bold ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-50 text-pink-700 border-pink-100' : 'bg-gray-50 text-gray-400 border-gray-100'}`}>
+                                                                    {(lead.instagram && lead.instagram !== 'null') ? lead.instagram : 'N/A'}
+                                                                </span>
                                                             </td>
-                                                            <td className="px-6 py-4 text-sm text-gray-500 space-y-1">
-                                                                {/* Email */}
+                                                            <td className="px-6 py-4 whitespace-nowrap text-xs">
+                                                                <span className={`px-2 py-1 rounded-full border flex items-center justify-center gap-1 font-bold ${lead.facebook && lead.facebook !== 'null' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-gray-50 text-gray-400 border-gray-100'}`}>
+                                                                    {(lead.facebook && lead.facebook !== 'null') ? lead.facebook : 'N/A'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
                                                                 <div className="flex items-center gap-2">
                                                                     <FaEnvelope className={lead.email && lead.email !== 'null' ? "text-orange-500" : "text-gray-300"} />
-                                                                    <span className={lead.email && lead.email !== 'null' ? "text-gray-900" : "text-gray-400 italic font-medium"}>
-                                                                        {(lead.email && lead.email !== 'null') ? lead.email : '📧 Disponible al comprar'}
+                                                                    <span className={lead.email && lead.email !== 'null' ? "text-gray-900 font-medium" : "text-gray-400 italic"}>
+                                                                        {(lead.email && lead.email !== 'null') ? lead.email : 'No disponible'}
                                                                     </span>
                                                                 </div>
-                                                                {/* Social */}
-                                                                <div className="flex items-center gap-2 text-xs">
-                                                                    <span className={`px-2 py-0.5 rounded border flex items-center gap-1 ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-100 text-pink-800 border-pink-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                                                        IG: {(lead.instagram && lead.instagram !== 'null') ? lead.instagram : 'Disponible'}
-                                                                    </span>
-                                                                    <span className={`px-2 py-0.5 rounded border flex items-center gap-1 ${lead.facebook && lead.facebook !== 'null' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
-                                                                        FB: {(lead.facebook && lead.facebook !== 'null') ? lead.facebook : 'Disponible'}
-                                                                    </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-sm text-gray-600">
+                                                                <div className="max-w-[150px] truncate" title={lead.direccion || 'No disponible'}>
+                                                                    {lead.direccion && lead.direccion !== 'null' ? lead.direccion : 'No disponible'}
                                                                 </div>
                                                             </td>
                                                         </tr>
@@ -976,7 +1062,32 @@ export default function Home() {
         .animate-fade-in-up {
           animation: fade-in-up 0.5s ease-out forwards;
         }
+        .animate-locality-ticker {
+          animation: locality-ticker 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+        @keyframes locality-ticker {
+          0% { opacity: 0; transform: translateY(30px) scale(0.9); filter: blur(4px); }
+          100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes fade-in-up {
+          0% { opacity: 0; transform: translateY(20px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
         </main>
+    );
+}
+export default function Home() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="animate-spin h-12 w-12 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+                    <p className="font-bold text-gray-500">Cargando aplicativo...</p>
+                </div>
+            </div>
+        }>
+            <LeadsApp />
+        </Suspense>
     );
 }
