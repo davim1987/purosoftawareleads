@@ -181,6 +181,134 @@ function PaymentModal({
     );
 }
 
+// Sample Data
+const sampleLeads: Lead[] = [
+    {
+        id: 'sample-1',
+        nombre: 'Gimnasio Fitness Real',
+        rubro: 'Gimnasios',
+        direccion: 'Av. Santa Fe 1234, CABA',
+        email: 'contacto@fitnessreal.com',
+        whatsapp: '11 2233-4455',
+        web: 'www.fitnessreal.com',
+        localidad: 'Palermo',
+        provincia: 'CABA',
+        instagram: '@fitnessreal',
+        facebook: 'FitnessRealOficial',
+        isWhatsappValid: true
+    },
+    {
+        id: 'sample-2',
+        nombre: 'Abogados Asociados MZ',
+        rubro: 'Abogados',
+        direccion: 'Calle Lavalle 567, CABA',
+        email: 'info@abogadosmz.com',
+        whatsapp: '11 6677-8899',
+        web: 'www.abogadosmz.com.ar',
+        localidad: 'San Nicolas',
+        provincia: 'CABA',
+        instagram: undefined,
+        facebook: undefined,
+        isWhatsappValid: true
+    },
+    {
+        id: 'sample-3',
+        nombre: 'Panadería La Ideal',
+        rubro: 'Panaderías',
+        direccion: 'Rivadavia 8900, Liniers',
+        email: null,
+        whatsapp: '11 9988-7766',
+        web: null,
+        localidad: 'Liniers',
+        provincia: 'CABA',
+        instagram: '@laideal_panaderia',
+        facebook: 'LaIdealPanaderia',
+        isWhatsappValid: true
+    }
+];
+
+function SampleResultsModal({ onClose }: { onClose: () => void }) {
+    return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full relative border border-gray-100 animate-scale-up overflow-hidden max-h-[90vh] flex flex-col">
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 text-3xl font-light transition cursor-pointer z-10"
+                >
+                    &times;
+                </button>
+
+                <div className="text-center mb-6">
+                    <h3 className="text-3xl font-black text-gray-900 mb-2">Ejemplo de Resultados 📊</h3>
+                    <p className="text-gray-500 text-sm">
+                        Así es como verás los leads una vez que realices una búsqueda.
+                    </p>
+                    <div className="mt-4 inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-4 py-1.5 rounded-full text-xs font-black border border-orange-100 shadow-sm">
+                        <span>MODO DEMOSTRACIÓN</span>
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto flex-1 bg-gray-50 rounded-2xl border border-gray-100 mb-4 p-2">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-white">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Nombre</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Rubro</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Dirección</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">WhatsApp</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Contactos</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {sampleLeads.map((lead) => (
+                                <tr key={lead.id} className="hover:bg-gray-50 transition">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{lead.nombre}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">{lead.rubro}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-500">
+                                        <div className="max-w-[150px] truncate" title={lead.direccion || ''}>{lead.direccion}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-black">
+                                        {lead.whatsapp}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-500 space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <FaEnvelope className={lead.email ? "text-orange-500" : "text-gray-300"} />
+                                            <span className={lead.email ? "text-gray-900 font-medium" : "text-gray-400 italic"}>
+                                                {lead.email || '📧 Solo disponible en versión full'}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs">
+                                            {lead.instagram && (
+                                                <span className="px-2 py-0.5 rounded border bg-pink-100 text-pink-800 border-pink-200 font-bold">
+                                                    IG: {lead.instagram}
+                                                </span>
+                                            )}
+                                            {lead.facebook && (
+                                                <span className="px-2 py-0.5 rounded border bg-blue-100 text-blue-800 border-blue-200 font-bold">
+                                                    FB: {lead.facebook}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className="text-center pt-4">
+                    <button
+                        onClick={onClose}
+                        className="px-10 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-black rounded-2xl shadow-xl hover:shadow-blue-500/30 transition-all transform hover:-translate-y-1"
+                    >
+                        ¡ENTENDIDO, QUIERO BUSCAR! 🚀
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function Home() {
     const [rubro, setRubro] = useState('');
     const [provincia, setProvincia] = useState('');
@@ -192,6 +320,7 @@ export default function Home() {
     const [showPayment, setShowPayment] = useState(false);
     const [customerEmail, setCustomerEmail] = useState('');
     const [localidadSearch, setLocalidadSearch] = useState(''); // New search state
+    const [showSampleModal, setShowSampleModal] = useState(false);
 
     // Search-specific states
     const [searchId, setSearchId] = useState<string | null>(null);
@@ -618,15 +747,15 @@ export default function Home() {
                         </div>
                     )}
 
-                    {/* Search Button */}
-                    <div className="mt-8 flex justify-center">
+                    {/* Search Button & Muestra */}
+                    <div className="mt-8 flex flex-wrap items-center justify-center gap-6">
                         <button
                             onClick={() => handleSearch()}
                             disabled={isLoading || isInitialSearch}
                             className={`
-                w-full md:w-auto px-8 py-3 rounded-full text-white font-bold text-lg shadow-lg transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3
-                ${(isLoading || isInitialSearch) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}
-              `}
+                                w-full md:w-auto px-10 py-4 rounded-full text-white font-black text-xl shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3
+                                ${(isLoading || isInitialSearch) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}
+                            `}
                         >
                             {(isLoading || isInitialSearch) ? (
                                 <>
@@ -638,9 +767,16 @@ export default function Home() {
                                 </>
                             ) : (
                                 <>
-                                    <FaSearch /> Buscar Negocios
+                                    <FaSearch /> BUSCAR NEGOCIOS
                                 </>
                             )}
+                        </button>
+
+                        <button
+                            onClick={() => setShowSampleModal(true)}
+                            className="px-8 py-3.5 border-2 border-gray-100 text-gray-400 hover:text-blue-600 hover:border-blue-100 hover:bg-blue-50/30 font-bold rounded-full transition-all flex items-center gap-2 text-sm bg-white shadow-sm transform hover:-translate-y-1"
+                        >
+                            <span className="text-lg">👀</span> Muestra
                         </button>
                     </div>
 
@@ -800,6 +936,13 @@ export default function Home() {
                                     rubro={rubro}
                                     provincia={provincia}
                                     localidades={localidades}
+                                />
+                            )}
+
+                            {/* Sample Modal */}
+                            {showSampleModal && (
+                                <SampleResultsModal
+                                    onClose={() => setShowSampleModal(false)}
                                 />
                             )}
                         </>
