@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
                 ciudad: paymentData.metadata?.provincia,
                 localidades: paymentData.metadata?.localidades,
                 status_pago: 'approved',
-                source: 'frontend_fallback'
+                source: 'frontend_fallback',
+                coordenadas: paymentData.metadata?.coords ? JSON.parse(paymentData.metadata.coords) : null
             };
 
             const n8nUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n-n8n.3htcbh.easypanel.host/webhook-test/lead';

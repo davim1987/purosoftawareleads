@@ -15,6 +15,7 @@ interface MercadoPagoButtonProps {
     rubro: string;
     provincia: string;
     localidades: string[];
+    coords?: Record<string, { lat: number, lon: number }>;
     className?: string;
     disabled?: boolean;
     children?: React.ReactNode;
@@ -29,6 +30,7 @@ export default function MercadoPagoButton({
     rubro,
     provincia,
     localidades,
+    coords,
     className = "",
     disabled = false,
     children
@@ -51,7 +53,8 @@ export default function MercadoPagoButton({
                     quantity,
                     rubro,
                     provincia,
-                    localidades
+                    localidades,
+                    coords
                 }),
             });
 

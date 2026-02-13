@@ -32,14 +32,16 @@ function PaymentModal({
     searchId,
     rubro,
     provincia,
-    localidades
+    localidades,
+    coords
 }: {
     totalAvailable: number,
     onClose: () => void,
     searchId: string,
     rubro: string,
     provincia: string,
-    localidades: string[]
+    localidades: string[],
+    coords?: Record<string, { lat: number, lon: number }>
 }) {
     const [email, setEmail] = useState('');
     const [whatsapp, setWhatsapp] = useState('');
@@ -163,6 +165,7 @@ function PaymentModal({
                             rubro={rubro}
                             provincia={provincia}
                             localidades={localidades}
+                            coords={coords}
                             disabled={!email || !!emailError || (whatsapp.length > 0 && whatsapp.length < 10)}
                             className={`w-full py-4.5 rounded-2xl font-black text-xl shadow-2xl transition-all flex justify-center items-center gap-3 text-white transform active:scale-95 ${email && !emailError && (whatsapp.length === 10 || whatsapp.length === 0)
                                 ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:shadow-blue-500/40 hover:-translate-y-1'
@@ -334,6 +337,10 @@ function LeadsApp() {
     const [isInitialSearch, setIsInitialSearch] = useState(false); // Polling for bot
     const [pollCount, setPollCount] = useState(0);
     const [expandedZones, setExpandedZones] = useState<string[]>([]); // To toggle zone visibility
+    const [currentLocIndex, setCurrentLocIndex] = useState(0);
+    const [displayProgress, setDisplayProgress] = useState(0);
+    const [searchCoords, setSearchCoords] = useState<Record<string, { lat: number, lon: number }>>({});
+    const [isPremiumWait, setIsPremiumWait] = useState(false);
 
     // Purchase states
     const [purchaseEmail, setPurchaseEmail] = useState('');
@@ -398,13 +405,32 @@ function LeadsApp() {
     // 2. Initial Search Polling (Direct Bot Integration)
     React.useEffect(() => {
         let timer: NodeJS.Timeout;
+        let ticker: NodeJS.Timeout;
+        let progressInterval: NodeJS.Timeout;
 
         if (isInitialSearch && searchId) {
+            setDisplayProgress(5); // Start at 5%
+
+            // Ticker for localities
+            ticker = setInterval(() => {
+                setCurrentLocIndex(prev => (prev + 1) % (localidades.length || 1));
+            }, 3000);
+
+            // Fake "slow" progress increment
+            progressInterval = setInterval(() => {
+                setDisplayProgress(prev => {
+                    if (prev >= 92) return prev; // Stay below 95% until done
+                    // Slower as it gets higher
+                    const increment = prev < 40 ? 2 : (prev < 70 ? 1 : 0.5);
+                    return prev + increment;
+                });
+            }, 2000);
+
             timer = setInterval(async () => {
                 console.log('Polling for bot progress...', searchId);
                 try {
                     const response = await axios.get(`/api/search/status?id=${searchId}`);
-                    const { status, error_message, results: polledResults, count: polledCount, bot_job_id } = response.data;
+                    const { status, results: polledResults, count: polledCount, bot_job_id } = response.data;
 
                     if (bot_job_id && !searchParams.get('searchId')) {
                         // Sync with URL for recovery
@@ -416,33 +442,39 @@ function LeadsApp() {
                     if (status === 'completed') {
                         setIsInitialSearch(false);
                         setIsLoading(false);
+                        setDisplayProgress(100); // Jump to 100%
                         localStorage.removeItem('active_search');
 
-                        // Use results directly from Status API for free search
-                        if (polledResults) {
+                        if (polledResults && polledResults.length > 0) {
                             setResults(polledResults);
                             setCount(polledCount || 0);
                             setPurchaseQuantity(polledCount > 0 ? polledCount : 1);
                             setSearchStatus('completed');
                         } else {
-                            handleSearch(true); // Fallback to DB if no results in status
+                            // Fallback to DB if no results
+                            handleSearch(true);
                         }
                     } else if (status === 'error') {
                         setIsInitialSearch(false);
                         setIsLoading(false);
                         setSearchStatus('error');
-                        setError(error_message || 'Error en el bot de búsqueda.');
+                        setDisplayProgress(0);
+                        setError('Ocurrió un error en la búsqueda paralela.');
                         clearInterval(timer);
-                    } else {
-                        setSearchStatus(status as any);
+                    } else if (status) {
+                        setSearchStatus(status);
                     }
                 } catch (err) {
                     console.error('Bot polling error:', err);
                 }
-            }, 2000); // Every 2 seconds
+            }, 3000);
         }
-        return () => { if (timer) clearInterval(timer); };
-    }, [isInitialSearch, searchId, rubro, provincia, localidades]);
+        return () => {
+            if (timer) clearInterval(timer);
+            if (ticker) clearInterval(ticker);
+            if (progressInterval) clearInterval(progressInterval);
+        };
+    }, [isInitialSearch, searchId, localidades.length, searchParams]);
 
     // 3. Post-Payment Polling (Polling for full results)
     React.useEffect(() => {
@@ -496,29 +528,36 @@ function LeadsApp() {
     const calculateProgress = (status: string) => {
         if (status === 'completed') return 100;
         if (status === 'error' || status === 'idle') return 0;
+
+        // If we have a displayProgress (from initial search), use it
+        if (displayProgress > 0) return Math.floor(displayProgress);
+
         if (status === 'geolocating') return 5;
         if (status === 'scraping') return 10;
-        if (status === 'processing_deep') return 15; // Start at 15% for better visual feedback
+        if (status === 'processing_deep') return 15;
 
         // Parse "Procesando X (1/5)..."
         const match = status.match(/\((\d+)\/(\d+)\)/);
         if (match) {
             const current = parseInt(match[1]);
             const total = parseInt(match[2]);
-            // Map 1/5 to a range between 10 and 95
             const progress = 10 + ((current / total) * 85);
             return Math.min(Math.floor(progress), 95);
         }
         return 0;
     };
 
-    // 4. Cancel Search Logic
-    const handleCancelSearch = () => {
+    // 4. Reset/Cancel Search Logic
+    const handleResetSearch = () => {
         setIsInitialSearch(false);
         setIsLoading(false);
         setSearchId(null);
         setSearchStatus('idle');
         setError(null);
+        setResults([]);
+        setCount(null);
+        setDisplayProgress(0);
+        setSearchCoords({});
         localStorage.removeItem('active_search');
 
         // Clear URL
@@ -560,6 +599,7 @@ function LeadsApp() {
         if (!fromPolling) {
             setResults([]);
             setCount(null);
+            setDisplayProgress(0);
         }
 
         try {
@@ -576,6 +616,9 @@ function LeadsApp() {
                 setSearchId(serverSearchId);
                 setIsInitialSearch(true);
                 setSearchStatus('scraping');
+                if (response.data.coords) {
+                    setSearchCoords(response.data.coords);
+                }
 
                 // Update URL for recovery and CLEAR payment status
                 const params = new URLSearchParams();
@@ -656,27 +699,27 @@ function LeadsApp() {
                         {/* Rubro */}
                         <div className="flex flex-col">
                             <div className="input-base group">
-                                <span className="pl-6 pr-3 font-bold text-gray-400 text-sm whitespace-nowrap">Rubro:</span>
+                                <span className="pl-6 pr-3 font-black text-gray-900 text-sm whitespace-nowrap">Rubro:</span>
                                 <input
                                     type="text"
                                     id="rubro"
                                     value={rubro}
                                     onChange={(e) => setRubro(e.target.value)}
                                     placeholder="Ej: Abogados, Gimnasios..."
-                                    className="input-field"
+                                    className="input-field font-black"
                                 />
                             </div>
                         </div>
 
                         {/* Provincia */}
                         <div className="flex flex-col">
-                            <div className="input-base group">
-                                <span className="pl-6 pr-3 font-bold text-gray-400 text-sm whitespace-nowrap">Provincia:</span>
+                            <div className="input-base group border-gray-200">
+                                <span className="pl-6 pr-3 font-black text-gray-900 text-sm whitespace-nowrap">Provincia:</span>
                                 <select
                                     id="provincia"
                                     value={provincia}
                                     onChange={handleProvinciaChange}
-                                    className="input-field cursor-pointer"
+                                    className="input-field cursor-pointer font-black"
                                 >
                                     <option value="">Seleccione...</option>
                                     {PROVINCIAS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
@@ -874,27 +917,25 @@ function LeadsApp() {
                     {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
                         <div className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
-                                <div className={`${searchStatus === 'processing_deep' ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
-                                    {searchStatus === 'processing_deep' ? (
+                                <div className={`${(searchStatus === 'processing_deep' || searchStatus === 'scraping' || searchStatus === 'geolocating' || searchStatus.startsWith('Procesando')) ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
+                                    {(searchStatus === 'processing_deep' || searchStatus === 'scraping' || searchStatus === 'geolocating' || searchStatus.startsWith('Procesando')) ? (
                                         <div className="flex flex-col items-center w-full max-w-lg">
                                             {/* Immersive Animation Container */}
-                                            <div className="relative h-64 w-full flex items-center justify-center mb-4 perspective-1000">
-                                                {/* Central Hub (The Target) */}
-                                                <div className="relative z-10 w-32 h-32 bg-white rounded-3xl shadow-2xl flex items-center justify-center border-4 border-blue-500 animate-float overflow-hidden">
-                                                    <div className="absolute inset-0 bg-blue-50/50 animate-pulse"></div>
-                                                    <div className="relative z-20 flex flex-col items-center">
-                                                        <FaMapMarkerAlt className="text-4xl text-blue-600 mb-1" />
-                                                        <span className="text-[10px] font-black text-blue-900 uppercase tracking-tighter text-center px-1 leading-tight break-words max-w-[80px]">
-                                                            {searchStatus.includes('Procesando')
-                                                                ? searchStatus.split('Procesando ')[1]?.split(' (')[0]
-                                                                : (localidades[0] || 'ZONA')}
+                                            <div className="relative h-72 w-full flex items-center justify-center mb-4 perspective-1000">
+                                                {/* Central Hub (Localidades dinámicas) */}
+                                                <div className="relative z-10 w-36 h-36 bg-white rounded-[2rem] shadow-2xl flex items-center justify-center border-4 border-blue-500 animate-float overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-b from-blue-50 to-white animate-pulse"></div>
+                                                    <div className="relative z-20 flex flex-col items-center px-4 transition-all duration-500">
+                                                        <FaMapMarkerAlt className="text-4xl text-blue-600 mb-2 drop-shadow-sm" />
+                                                        <span className="text-[11px] font-black text-blue-900 uppercase tracking-tighter text-center leading-tight break-words max-w-[100px] h-8 flex items-center justify-center">
+                                                            {localidades[currentLocIndex] || 'Buscando...'}
                                                         </span>
                                                     </div>
                                                     {/* Scan Line effect */}
-                                                    <div className="absolute inset-x-0 h-1 bg-blue-400/30 animate-scan z-30"></div>
+                                                    <div className="absolute inset-x-0 h-1 bg-blue-400/20 animate-scan z-30"></div>
                                                 </div>
 
-                                                {/* Flying Contact Icons */}
+                                                {/* Flying Contact Icons (Preferred Animation) */}
                                                 {[
                                                     { Icon: FaWhatsapp, color: 'text-green-500', delay: '0s', tx: '150px', ty: '-100px' },
                                                     { Icon: FaEnvelope, color: 'text-blue-400', delay: '0.8s', tx: '-140px', ty: '80px' },
@@ -907,8 +948,6 @@ function LeadsApp() {
                                                         style={{
                                                             '--tw-translate-x': item.tx,
                                                             '--tw-translate-y': item.ty,
-                                                            '--tw-dest-x': '0px',
-                                                            '--tw-dest-y': '0px',
                                                             animationDelay: item.delay
                                                         } as any}
                                                     >
@@ -919,28 +958,24 @@ function LeadsApp() {
                                                 ))}
 
                                                 {/* Pulse Rings */}
-                                                <div className="absolute w-48 h-48 border-4 border-blue-500/20 rounded-full animate-pulse-ring"></div>
-                                                <div className="absolute w-64 h-64 border-2 border-blue-400/10 rounded-full animate-pulse-ring delay-700"></div>
+                                                <div className="absolute w-56 h-56 border-4 border-blue-500/10 rounded-full animate-pulse-ring"></div>
+                                                <div className="absolute w-72 h-72 border-2 border-blue-400/5 rounded-full animate-pulse-ring delay-700"></div>
                                             </div>
 
-                                            <div className="text-center mt-4">
-                                                <h3 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-700 tracking-tighter italic uppercase animate-pulse">
-                                                    BUSCANDO CONTACTOS...
+                                            <div className="text-center mt-2 px-4 w-full">
+                                                <h3 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-700 tracking-tighter italic uppercase">
+                                                    {searchStatus === 'geolocating' ? 'LOCALIZANDO...' : 'BUSCANDO LEADS...'}
                                                 </h3>
-                                                <p className="text-[11px] font-bold text-blue-400 uppercase tracking-[0.2em] mt-2 flex items-center justify-center gap-2">
-                                                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
-                                                    CONECTANDO CON {rubro.toUpperCase()} EN {localidades[0]?.toUpperCase()}
-                                                </p>
+                                                <div className="h-6 overflow-hidden mt-1">
+                                                    <p className="text-[10px] font-bold text-blue-400/70 uppercase tracking-[0.2em] flex items-center justify-center gap-2">
+                                                        <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-ping"></span>
+                                                        {searchStatus === 'geolocating'
+                                                            ? 'PROCESANDO COORDENADAS'
+                                                            : `ESCANEANDO EN ${localidades[currentLocIndex]?.toUpperCase() || 'PROGRESO'}`
+                                                        }
+                                                    </p>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ) : searchStatus.startsWith('Procesando') ? (
-                                        <div key={searchStatus} className="flex flex-col items-center animate-locality-ticker">
-                                            <span className="text-2xl font-black text-blue-600 tracking-tighter uppercase italic">
-                                                {searchStatus.split('Procesando ')[1]?.split(' (')[0]}
-                                            </span>
-                                            <span className="text-[10px] font-black text-blue-300 uppercase tracking-widest mt-1">
-                                                PROCESANDO ZONA {searchStatus.match(/\d+\/\d+/)?.[0]}
-                                            </span>
                                         </div>
                                     ) : (
                                         <span className="text-lg font-bold text-blue-900 animate-pulse">
@@ -958,7 +993,7 @@ function LeadsApp() {
                                             style={{ width: `${calculateProgress(searchStatus)}%` }}
                                         ></div>
                                     </div>
-                                    <span className="text-xs font-black text-blue-500 w-8">{calculateProgress(searchStatus)}%</span>
+                                    <span className="text-xs font-black text-blue-500 w-10">{calculateProgress(searchStatus)}%</span>
                                 </div>
                             </div>
 
@@ -968,7 +1003,7 @@ function LeadsApp() {
                                         'No cierres esta pestaña. Los resultados aparecerán abajo automáticamente.'}
                                 </p>
                                 <button
-                                    onClick={handleCancelSearch}
+                                    onClick={handleResetSearch}
                                     className="text-[10px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors cursor-pointer border-b border-transparent hover:border-red-600"
                                 >
                                     Cancelar Búsqueda
@@ -984,7 +1019,7 @@ function LeadsApp() {
                             </div>
                             {searchStatus === 'error' && (
                                 <button
-                                    onClick={handleCancelSearch}
+                                    onClick={handleResetSearch}
                                     className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-bold hover:bg-gray-300 transition"
                                 >
                                     Intentar de nuevo
@@ -1019,12 +1054,20 @@ function LeadsApp() {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => setShowPayment(true)}
-                                            className="w-full md:w-auto px-10 py-4 bg-white text-blue-700 hover:bg-blue-50 font-black text-xl rounded-2xl shadow-2xl transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
-                                        >
-                                            ¡LO QUIERO! 🚀
-                                        </button>
+                                        <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
+                                            <button
+                                                onClick={handleResetSearch}
+                                                className="px-6 py-3 text-white/80 hover:text-white font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 border border-white/20 hover:border-white/40 rounded-xl"
+                                            >
+                                                <FaSearch className="text-[10px]" /> Nueva Búsqueda
+                                            </button>
+                                            <button
+                                                onClick={() => setShowPayment(true)}
+                                                className="w-full md:w-auto px-10 py-4 bg-white text-blue-700 hover:bg-blue-50 font-black text-xl rounded-2xl shadow-2xl transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                                            >
+                                                ¡LO QUIERO! 🚀
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 mb-8">
@@ -1113,6 +1156,7 @@ function LeadsApp() {
                                     rubro={rubro}
                                     provincia={provincia}
                                     localidades={localidades}
+                                    coords={searchCoords}
                                 />
                             )}
 
@@ -1141,7 +1185,7 @@ function LeadsApp() {
           @apply w-full flex items-center border-2 border-gray-100 rounded-xl bg-white shadow-sm focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-500 transition-all duration-200 overflow-hidden;
         }
         .input-field {
-          @apply flex-1 px-4 py-3 bg-transparent text-black outline-none placeholder-gray-400 font-medium;
+          @apply flex-1 px-4 py-3 bg-transparent text-black outline-none placeholder-gray-500 font-black;
         }
         .animate-scale-up {
           animation: scale-up 0.3s ease-out forwards;

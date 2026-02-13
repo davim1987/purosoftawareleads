@@ -203,97 +203,103 @@ export async function POST(req: NextRequest) {
             console.error('DB query error:', dbErr);
         }
 
-        // Step B: Bot Fallback (Sequential Queue)
+        // Step B: Bot Fallback (Parallel Execution)
         if (leads.length === 0) {
             const botBaseUrl = process.env.NEXT_PUBLIC_BOT_API_URL || 'https://gmaps-simple-scraper.puro.software';
+            const searchId = crypto.randomUUID();
+
             try {
-                // 1. Initialize with FIRST locality synchronously to get the searchId
-                const firstLoc = localidades[0];
-                const coords = await getGeolocation(firstLoc, provincia);
-                if (!coords) throw new Error(`Could not geolocate locality: ${firstLoc}`);
+                // 1. Parallel Geolocation for ALL localities
+                console.log(`[Parallel Search] Geolocating ${localidades.length} localities...`);
+                const coordsResults = await Promise.all(
+                    localidades.map(loc => getGeolocation(loc, provincia))
+                );
 
-                const firstJobPayload = {
-                    name: `Queue-${rubro.substring(0, 5)}-${firstLoc.substring(0, 5)}`,
-                    keywords: [rubro],
-                    lang: "es",
-                    zoom: 14,
-                    lat: coords.lat.toString(),
-                    lon: coords.lon.toString(),
-                    fast_mode: true,
-                    radius: 5000,
-                    depth: 5,
-                    max_time: 600
-                };
+                const validLocs = localidades.filter((_, idx) => coordsResults[idx] !== null);
+                const validCoords = coordsResults.filter(c => c !== null);
 
-                const createJobResponse = await axios.post(`${botBaseUrl}/api/v1/jobs`, firstJobPayload, { httpsAgent });
-                const searchId = createJobResponse.data.id || createJobResponse.data.ID;
-
-                // Create tracking record
-                await supabase.from('search_tracking').upsert({
-                    id: searchId,
-                    bot_job_id: searchId,
-                    status: `Procesando ${firstLoc} (1/${localidades.length})...`,
-                    rubro,
-                    localidad: firstLoc
+                // Create a mapping of locality name -> coordinates for the webhook
+                const validCoordsMap: Record<string, { lat: number, lon: number }> = {};
+                validLocs.forEach((loc, idx) => {
+                    validCoordsMap[loc] = validCoords[idx];
                 });
 
-                // 2. Launch Background Queue Loop
+                if (validLocs.length === 0) {
+                    throw new Error('No se pudo geolocalizar ninguna localidad.');
+                }
+
+                // Create initial tracking record
+                await supabase.from('search_tracking').upsert({
+                    id: searchId,
+                    bot_job_id: searchId, // We use our UUID as the anchor
+                    status: `Geolocalizando ${validLocs.length} zonas...`,
+                    rubro,
+                    localidad: validLocs.join(', ')
+                });
+
+                // 2. Launch Background Parallel Processing Loop
                 (async () => {
                     const aggregatedLeads: any[] = [];
+                    const subJobIds: string[] = [];
+
                     try {
-                        for (let i = 0; i < localidades.length; i++) {
-                            const currentLoc = localidades[i];
-                            console.log(`[Queue] Processing ${currentLoc} (${i + 1}/${localidades.length})`);
+                        // Launch all bot jobs in parallel
+                        console.log(`[Parallel Search] Launching ${validLocs.length} bot jobs...`);
+                        const jobRequests = validCoords.map((coords, idx) => {
+                            const payload = {
+                                name: `P-${searchId.substring(0, 4)}-${validLocs[idx].substring(0, 5)}`,
+                                keywords: [rubro],
+                                lang: "es",
+                                zoom: 14,
+                                lat: coords.lat.toString(),
+                                lon: coords.lon.toString(),
+                                fast_mode: true,
+                                radius: 5000,
+                                depth: 5,
+                                max_time: 400
+                            };
+                            return axios.post(`${botBaseUrl}/api/v1/jobs`, payload, { httpsAgent });
+                        });
 
-                            // Update status to current locality
-                            await supabase.from('search_tracking').update({
-                                status: `Procesando ${currentLoc} (${i + 1}/${localidades.length})...`
-                            }).eq('id', searchId);
+                        const jobResponses = await Promise.all(jobRequests);
+                        subJobIds.push(...jobResponses.map(r => r.data.id || r.data.ID));
 
-                            let currentJobId = '';
-                            if (i === 0) {
-                                currentJobId = searchId;
-                            } else {
-                                const cCoords = await getGeolocation(currentLoc, provincia);
-                                if (cCoords) {
-                                    const cPayload = {
-                                        name: `QueuePart-${searchId.substring(0, 4)}-${currentLoc.substring(0, 5)}`,
-                                        keywords: [rubro],
-                                        lang: "es",
-                                        zoom: 14,
-                                        lat: cCoords.lat.toString(),
-                                        lon: cCoords.lon.toString(),
-                                        fast_mode: true,
-                                        radius: 5000,
-                                        depth: 5,
-                                        max_time: 400
-                                    };
-                                    const cResp = await axios.post(`${botBaseUrl}/api/v1/jobs`, cPayload, { httpsAgent });
-                                    currentJobId = cResp.data.id || cResp.data.ID;
+                        // Update status to polling
+                        await supabase.from('search_tracking').update({
+                            status: `Procesando ${validLocs.length} zonas en paralelo...`
+                        }).eq('id', searchId);
+
+                        // Parallel Polling for all sub-jobs
+                        console.log(`[Parallel Search] Polling sub-jobs: ${subJobIds.join(', ')}`);
+                        await Promise.all(subJobIds.map(async (jobId, idx) => {
+                            const currentLoc = validLocs[idx];
+                            let jobStatus = 'pending';
+                            let attempts = 0;
+
+                            while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'failed' && attempts < 80) {
+                                await new Promise(r => setTimeout(r, 5000));
+                                try {
+                                    const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, { httpsAgent });
+                                    jobStatus = statusResponse.data.Status || statusResponse.data.status;
+                                    console.log(`[Job ${jobId}] Status: ${jobStatus} (Attempt ${attempts + 1})`);
+                                } catch (e) {
+                                    console.error(`[Job ${jobId}] Polling error:`, e);
                                 }
+                                attempts++;
                             }
 
-                            if (currentJobId) {
-                                // Poll for current job
-                                let jobStatus = 'pending';
-                                let attempts = 0;
-                                while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'failed' && attempts < 80) {
-                                    await new Promise(r => setTimeout(r, 5000));
-                                    const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${currentJobId}`, { httpsAgent });
-                                    jobStatus = statusResponse.data.Status || statusResponse.data.status;
-                                    attempts++;
-                                }
-
-                                if (jobStatus === 'ok' || jobStatus === 'completed') {
-                                    const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${currentJobId}/download`, { httpsAgent });
+                            if (jobStatus === 'ok' || jobStatus === 'completed') {
+                                try {
+                                    console.log(`[Job ${jobId}] Downloading results...`);
+                                    const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}/download`, { httpsAgent });
                                     const partLeads = parseCSV(csvResponse.data);
+                                    console.log(`[Job ${jobId}] Found ${partLeads.length} leads in CSV.`);
 
-                                    // Map and Add to aggregate
                                     partLeads.forEach(l => {
                                         let mail = l.extended_emails || l.email;
                                         if (!mail && l.emails) mail = typeof l.emails === 'string' ? l.emails.split(',')[0] : (l.emails[0] || 'No disponible');
 
-                                        aggregatedLeads.push({
+                                        const leadObj = {
                                             id: l.place_id || l.id || l.cid || `lead-${Math.random().toString(36).substring(7)}`,
                                             nombre: l.title || l.name || 'Nombre Reservado',
                                             whatsapp: l.phone || l.whatsapp,
@@ -305,30 +311,34 @@ export async function POST(req: NextRequest) {
                                             instagram: l.instagram || 'No disponible',
                                             facebook: l.facebook || 'No disponible',
                                             horario: l.opening_hours || l.hours || l.opening_hour || 'No disponible'
-                                        });
+                                        };
 
-                                        // Post-process socials from other fields if missing
-                                        const last = aggregatedLeads[aggregatedLeads.length - 1];
+                                        // Process socials
                                         const searchFields = [l.website, l.web, l.webcity, l.emails, l.extended_emails].filter(Boolean);
-
-                                        if (last.instagram === 'No disponible') {
+                                        if (leadObj.instagram === 'No disponible') {
                                             for (const f of searchFields) {
                                                 const h = extractSocialHandle(f, 'instagram');
-                                                if (h) { last.instagram = h; break; }
+                                                if (h) { leadObj.instagram = h; break; }
                                             }
                                         }
-                                        if (last.facebook === 'No disponible') {
+                                        if (leadObj.facebook === 'No disponible') {
                                             for (const f of searchFields) {
                                                 const h = extractSocialHandle(f, 'facebook');
-                                                if (h) { last.facebook = h; break; }
+                                                if (h) { leadObj.facebook = h; break; }
                                             }
                                         }
+                                        aggregatedLeads.push(leadObj);
                                     });
+                                } catch (dlErr) {
+                                    console.error(`[Job ${jobId}] Download/Parse error:`, dlErr);
                                 }
+                            } else {
+                                console.error(`[Job ${jobId}] Failed or timed out (Final Status: ${jobStatus})`);
                             }
-                        }
+                        }));
 
                         // Final Scoring and Saving
+                        console.log(`[Parallel Search] Total leads aggregated: ${aggregatedLeads.length}`);
                         if (aggregatedLeads.length > 0) {
                             const getScore = (l: any) => {
                                 let s = 0;
@@ -340,27 +350,38 @@ export async function POST(req: NextRequest) {
 
                             const topLeads = aggregatedLeads
                                 .sort((a, b) => getScore(b) - getScore(a))
-                                .slice(0, 5); // Increased to top 5 as discussed previously for free searches or just more variety
+                                .slice(0, 5)
+                                .map(l => ({
+                                    ...l,
+                                    whatsapp: l.whatsapp ? maskPhone(l.whatsapp) : l.whatsapp,
+                                    email: (l.email && l.email !== 'No disponible') ? maskEmail(l.email) : l.email,
+                                    instagram: (l.instagram && l.instagram !== 'No disponible') ? maskSocial(l.instagram) : l.instagram,
+                                    facebook: (l.facebook && l.facebook !== 'No disponible') ? maskSocial(l.facebook) : l.facebook,
+                                }));
 
-                            await supabase.from('search_tracking').update({
+                            console.log(`[Parallel Search] Saving ${topLeads.length} MASKED top leads to tracking ${searchId}`);
+                            const { error: updateError } = await supabase.from('search_tracking').update({
                                 status: 'completed',
                                 total_leads: aggregatedLeads.length,
                                 results: topLeads
                             }).eq('id', searchId);
+
+                            if (updateError) console.error(`[Parallel Search] DB Update Error:`, updateError);
                         } else {
+                            console.log(`[Parallel Search] No leads found. Marking search as completed (empty).`);
                             await supabase.from('search_tracking').update({ status: 'completed', total_leads: 0, results: [] }).eq('id', searchId);
                         }
 
                     } catch (bgErr: any) {
-                        console.error('[Background Queue] Error:', bgErr);
+                        console.error('[Parallel Background] Error:', bgErr);
                         await supabase.from('search_tracking').update({ status: 'error', error_message: bgErr.message }).eq('id', searchId);
                     }
                 })();
 
-                return NextResponse.json({ status: 'processing', searchId });
-            } catch (botErr: any) {
-                console.error('Queue initiation error:', botErr);
-                return NextResponse.json({ error: botErr.message }, { status: 500 });
+                return NextResponse.json({ status: 'processing', searchId, coords: validCoordsMap });
+            } catch (pErr: any) {
+                console.error('Parallel initiation error:', pErr);
+                return NextResponse.json({ error: pErr.message }, { status: 500 });
             }
         }
 
