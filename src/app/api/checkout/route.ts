@@ -12,6 +12,9 @@ export async function POST(req: NextRequest) {
         const finalSearchId = searchId || `SEARCH-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
         const preference = new Preference(client);
+        const qty = Number(quantity) || 1;
+        const totalAmount = Number(amount);
+        const unitPrice = totalAmount / qty;
 
         const result = await preference.create({
             body: {
@@ -19,8 +22,8 @@ export async function POST(req: NextRequest) {
                     {
                         id: 'lead-purchase',
                         title: 'Compra de Leads',
-                        quantity: Number(quantity),
-                        unit_price: Number(amount),
+                        quantity: qty,
+                        unit_price: unitPrice,
                         currency_id: 'ARS', // Adjustable based on region
                     },
                 ],
