@@ -884,8 +884,10 @@ function LeadsApp() {
                                                     <div className="absolute inset-0 bg-blue-50/50 animate-pulse"></div>
                                                     <div className="relative z-20 flex flex-col items-center">
                                                         <FaMapMarkerAlt className="text-4xl text-blue-600 mb-1" />
-                                                        <span className="text-[10px] font-black text-blue-900 uppercase tracking-tighter text-center px-2 leading-none">
-                                                            {localidades[0] || 'ZONA'}
+                                                        <span className="text-[10px] font-black text-blue-900 uppercase tracking-tighter text-center px-1 leading-tight break-words max-w-[80px]">
+                                                            {searchStatus.includes('Procesando')
+                                                                ? searchStatus.split('Procesando ')[1]?.split(' (')[0]
+                                                                : (localidades[0] || 'ZONA')}
                                                         </span>
                                                     </div>
                                                     {/* Scan Line effect */}
