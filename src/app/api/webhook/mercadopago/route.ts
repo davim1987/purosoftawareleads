@@ -24,11 +24,17 @@ export async function POST(req: NextRequest) {
                     cantidad_leads: paymentData.metadata.quantity || 1,
                     rubro: paymentData.metadata.rubro,
                     provincia: paymentData.metadata.provincia,
-                    localidades: paymentData.metadata.localidades
+                    ciudad: paymentData.metadata.provincia, // Adding explicit 'ciudad' field
+                    localidades: paymentData.metadata.localidades,
+                    status_pago: 'approved'
                 };
 
+                const n8nUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n-n8n.3htcbh.easypanel.host/webhook-test/lead';
+
+                console.log(`Sending webhook to n8n: ${n8nUrl} for searchId: ${payload.searchId}`);
+
                 try {
-                    const response = await fetch('https://n8n-n8n.3htcbh.easypanel.host/webhook-test/lead', {
+                    const response = await fetch(n8nUrl, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

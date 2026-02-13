@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
                     }
                 },
                 back_urls: {
-                    success: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/success`,
-                    failure: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/failure`,
-                    pending: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/pending`,
+                    success: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/?searchId=${finalSearchId}&payment=success`,
+                    failure: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/?searchId=${finalSearchId}&payment=failure`,
+                    pending: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/?searchId=${finalSearchId}&payment=pending`,
                 },
                 auto_return: 'approved',
                 external_reference: finalSearchId,

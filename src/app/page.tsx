@@ -347,13 +347,22 @@ function LeadsApp() {
     // 1. Rehydration: Load active search from localStorage or URL
     useEffect(() => {
         const urlSearchId = searchParams.get('searchId');
+        const paymentStatus = searchParams.get('payment');
         const savedSearch = localStorage.getItem('active_search');
 
         if (urlSearchId) {
             // Priority: URL Search ID for recovery
             setSearchId(urlSearchId);
-            setIsInitialSearch(true);
-            setSearchStatus('scraping');
+
+            if (paymentStatus === 'success') {
+                setIsProcessing(true);
+                setSearchStatus('processing_deep'); // Custom status for post-payment
+                // Clear any "just searching" flags
+                setIsInitialSearch(false);
+            } else {
+                setIsInitialSearch(true);
+                setSearchStatus('scraping');
+            }
         } else if (savedSearch) {
             const { id, rubro: sRubro, provincia: sProv, localidades: sLocs, timestamp } = JSON.parse(savedSearch);
             // Check if older than 24h
@@ -466,6 +475,7 @@ function LeadsApp() {
         if (status === 'error' || status === 'idle') return 0;
         if (status === 'geolocating') return 5;
         if (status === 'scraping') return 10;
+        if (status === 'processing_deep') return 95; // High progress for post-payment wait
 
         // Parse "Procesando X (1/5)..."
         const match = status.match(/\((\d+)\/(\d+)\)/);
@@ -838,11 +848,20 @@ function LeadsApp() {
                     </div>
 
                     {/* Progress Bar & Status */}
-                    {(isLoading || isInitialSearch) && searchStatus !== 'idle' && (
+                    {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
                         <div className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
                                 <div className="h-16 flex items-center justify-center overflow-hidden w-full relative">
-                                    {searchStatus.startsWith('Procesando') ? (
+                                    {searchStatus === 'processing_deep' ? (
+                                        <div className="flex flex-col items-center animate-pulse">
+                                            <span className="text-xl font-black text-blue-600 tracking-tighter uppercase italic">
+                                                Verificando Pago...
+                                            </span>
+                                            <span className="text-[10px] font-black text-blue-300 uppercase tracking-widest mt-1">
+                                                Preparando descarga de contactos
+                                            </span>
+                                        </div>
+                                    ) : searchStatus.startsWith('Procesando') ? (
                                         <div key={searchStatus} className="flex flex-col items-center animate-locality-ticker">
                                             <span className="text-2xl font-black text-blue-600 tracking-tighter uppercase italic">
                                                 {searchStatus.split('Procesando ')[1]?.split(' (')[0]}
