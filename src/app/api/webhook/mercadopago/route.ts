@@ -6,20 +6,32 @@ const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN!
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { type, data } = body;
+        const type = body.type || (body.action?.includes('payment') ? 'payment' : null);
+        const data = body.data;
 
-        console.log(`[MP Webhook] Received notification type: ${type}`, body);
+        console.log(`[MP Webhook] Incoming: type=${type}, action=${body.action}`, body);
+
+        if (!process.env.MP_ACCESS_TOKEN) {
+            console.error('[MP Webhook] CRITICAL: MP_ACCESS_TOKEN is missing in environment variables');
+        }
 
         if (type === 'payment') {
             const payment = new Payment(client);
             let paymentData;
 
+            const paymentId = data?.id || body.resource?.split('/').pop();
+
+            if (!paymentId) {
+                console.error('[MP Webhook] No payment ID found in body');
+                return NextResponse.json({ error: 'No ID' }, { status: 200 });
+            }
+
             try {
-                paymentData = await payment.get({ id: data.id });
-                console.log(`[MP Webhook] Payment data retrieved for ID ${data.id}: status=${paymentData.status}`);
+                paymentData = await payment.get({ id: paymentId });
+                console.log(`[MP Webhook] Payment data retrieved for ID ${paymentId}: status=${paymentData.status}`);
             } catch (pError) {
-                console.error(`[MP Webhook] Error fetching payment data for ID ${data.id}:`, pError);
-                return NextResponse.json({ error: 'Error fetching payment data' }, { status: 500 });
+                console.error(`[MP Webhook] Error fetching payment data for ID ${paymentId}:`, pError);
+                return NextResponse.json({ error: 'Error fetching payment data' }, { status: 200 }); // Always 200 to MP
             }
 
             if (paymentData.status === 'approved') {
