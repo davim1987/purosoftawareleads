@@ -488,8 +488,29 @@ function LeadsApp() {
                     return;
                 }
 
-                console.log('Polling for full results...', { rubro, localidades });
+                console.log('Polling for full results and status...', { searchId, rubro });
                 try {
+                    // 1. Check Status first to see if n8n notified us
+                    if (searchId) {
+                        const statusRes = await axios.get(`/api/search/status?id=${searchId}`);
+                        const currentStatus = statusRes.data.status;
+                        if (currentStatus) setSearchStatus(currentStatus);
+
+                        if (currentStatus === 'completed_deep' || currentStatus?.toLowerCase().includes('enviados')) {
+                            // If notified by n8n, we still want to try to get the leads one last time
+                            const response = await axios.post(`/api/search?full=true`, {
+                                rubro, provincia, localidades
+                            });
+                            const leads = response.data.leads || [];
+                            setResults(leads);
+                            setIsProcessing(false);
+                            setIsLoading(false);
+                            clearInterval(timer);
+                            return;
+                        }
+                    }
+
+                    // 2. Regular full data check
                     const response = await axios.post(`/api/search?full=true`, {
                         rubro,
                         provincia,
@@ -507,10 +528,10 @@ function LeadsApp() {
                         clearInterval(timer);
                     } else {
                         setPollCount(prev => prev + 1);
-                        if (pollCount > 60) { // Timeout after 5 minutes (5s * 60)
+                        if (pollCount > 100) { // Extended timeout for deep search
                             setIsProcessing(false);
                             setIsLoading(false);
-                            setError('El procesamiento está tardando más de lo esperado. Te avisaremos por WhatsApp.');
+                            setError('El procesamiento está tardando. Te avisaremos por WhatsApp apenas terminen de enviarse.');
                             clearInterval(timer);
                         }
                     }
@@ -526,7 +547,7 @@ function LeadsApp() {
     }, [isProcessing, rubro, provincia, localidades, pollCount]);
 
     const calculateProgress = (status: string) => {
-        if (status === 'completed') return 100;
+        if (status === 'completed' || status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 100;
         if (status === 'error' || status === 'idle') return 0;
 
         // If we have a displayProgress (from initial search), use it
@@ -978,10 +999,11 @@ function LeadsApp() {
                                             </div>
                                         </div>
                                     ) : (
-                                        <span className="text-lg font-bold text-blue-900 animate-pulse">
-                                            {searchStatus === 'completed' ? '✅ ¡BÚSQUEDA FINALIZADA!' :
-                                                searchStatus === 'error' ? '❌ ERROR EN EL PROCESO' :
-                                                    (searchStatus.includes('Geolocalizando') || searchStatus === 'geolocating') ? '⚙️ GEOLOCALIZANDO...' : '⌛ INICIANDO SCRAPER...'}
+                                        <span className="text-lg font-bold text-blue-900 animate-pulse text-center px-4">
+                                            {(searchStatus as any) === 'completed' ? '✅ ¡BÚSQUEDA FINALIZADA!' :
+                                                ((searchStatus as any) === 'completed_deep' || (searchStatus as string).toLowerCase().includes('enviados')) ? '✅ ¡LEADS ENVIADOS!' :
+                                                    (searchStatus as any) === 'error' ? '❌ ERROR EN EL PROCESO' :
+                                                        ((searchStatus as string).includes('Geolocalizando') || (searchStatus as any) === 'geolocating') ? '⚙️ GEOLOCALIZANDO...' : '⌛ INICIANDO SCRAPER...'}
                                         </span>
                                     )}
                                 </div>
