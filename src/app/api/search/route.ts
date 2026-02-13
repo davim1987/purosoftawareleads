@@ -255,7 +255,7 @@ export async function POST(req: NextRequest) {
                                 lon: coords.lon.toString(),
                                 fast_mode: true,
                                 radius: 5000,
-                                depth: 5,
+                                depth: 2, // Reduced depth for faster teaser results
                                 max_time: 400
                             };
                             return axios.post(`${botBaseUrl}/api/v1/jobs`, payload, { httpsAgent });
@@ -277,7 +277,7 @@ export async function POST(req: NextRequest) {
                             let attempts = 0;
 
                             while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'failed' && attempts < 80) {
-                                await new Promise(r => setTimeout(r, 5000));
+                                await new Promise(r => setTimeout(r, 3000)); // Tightened polling from 5s to 3s
                                 try {
                                     const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, { httpsAgent });
                                     jobStatus = statusResponse.data.Status || statusResponse.data.status;

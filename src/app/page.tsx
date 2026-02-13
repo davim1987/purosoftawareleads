@@ -917,8 +917,8 @@ function LeadsApp() {
                     {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
                         <div className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
-                                <div className={`${(searchStatus === 'processing_deep' || searchStatus === 'scraping' || searchStatus === 'geolocating' || searchStatus.startsWith('Procesando')) ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
-                                    {(searchStatus === 'processing_deep' || searchStatus === 'scraping' || searchStatus === 'geolocating' || searchStatus.startsWith('Procesando')) ? (
+                                <div className={`${(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
+                                    {(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? (
                                         <div className="flex flex-col items-center w-full max-w-lg">
                                             {/* Immersive Animation Container */}
                                             <div className="relative h-72 w-full flex items-center justify-center mb-4 perspective-1000">
@@ -928,7 +928,7 @@ function LeadsApp() {
                                                     <div className="relative z-20 flex flex-col items-center px-4 transition-all duration-500">
                                                         <FaMapMarkerAlt className="text-4xl text-blue-600 mb-2 drop-shadow-sm" />
                                                         <span className="text-[11px] font-black text-blue-900 uppercase tracking-tighter text-center leading-tight break-words max-w-[100px] h-8 flex items-center justify-center">
-                                                            {localidades[currentLocIndex] || 'Buscando...'}
+                                                            {localidades[currentLocIndex] || (searchStatus.includes('Geolocalizando') ? 'Localizando...' : 'Buscando...')}
                                                         </span>
                                                     </div>
                                                     {/* Scan Line effect */}
@@ -964,12 +964,12 @@ function LeadsApp() {
 
                                             <div className="text-center mt-2 px-4 w-full">
                                                 <h3 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-700 tracking-tighter italic uppercase">
-                                                    {searchStatus === 'geolocating' ? 'LOCALIZANDO...' : 'BUSCANDO LEADS...'}
+                                                    {(searchStatus.includes('Geolocalizando') || searchStatus === 'geolocating') ? 'LOCALIZANDO...' : 'BUSCANDO LEADS...'}
                                                 </h3>
                                                 <div className="h-6 overflow-hidden mt-1">
                                                     <p className="text-[10px] font-bold text-blue-400/70 uppercase tracking-[0.2em] flex items-center justify-center gap-2">
                                                         <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-ping"></span>
-                                                        {searchStatus === 'geolocating'
+                                                        {(searchStatus.includes('Geolocalizando') || searchStatus === 'geolocating')
                                                             ? 'PROCESANDO COORDENADAS'
                                                             : `ESCANEANDO EN ${localidades[currentLocIndex]?.toUpperCase() || 'PROGRESO'}`
                                                         }
@@ -981,7 +981,7 @@ function LeadsApp() {
                                         <span className="text-lg font-bold text-blue-900 animate-pulse">
                                             {searchStatus === 'completed' ? '✅ ¡BÚSQUEDA FINALIZADA!' :
                                                 searchStatus === 'error' ? '❌ ERROR EN EL PROCESO' :
-                                                    searchStatus === 'geolocating' ? '⚙️ GEOLOCALIZANDO...' : '⌛ INICIANDO SCRAPER...'}
+                                                    (searchStatus.includes('Geolocalizando') || searchStatus === 'geolocating') ? '⚙️ GEOLOCALIZANDO...' : '⌛ INICIANDO SCRAPER...'}
                                         </span>
                                     )}
                                 </div>
