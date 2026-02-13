@@ -348,32 +348,33 @@ function LeadsApp() {
     useEffect(() => {
         const urlSearchId = searchParams.get('searchId');
         const paymentStatus = searchParams.get('payment');
-        const savedSearch = localStorage.getItem('active_search');
+        const savedSearchStr = localStorage.getItem('active_search');
+        const savedSearch = savedSearchStr ? JSON.parse(savedSearchStr) : null;
+
+        // Restore metadata if available and relevant
+        if (savedSearch) {
+            const { id, rubro: sRubro, provincia: sProv, localidades: sLocs, timestamp } = savedSearch;
+            // If ID matches or no ID in URL, restore
+            if (!urlSearchId || urlSearchId === id) {
+                if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+                    setRubro(sRubro);
+                    setProvincia(sProv);
+                    setLocalidades(sLocs);
+                    if (!urlSearchId) setSearchId(id);
+                }
+            }
+        }
 
         if (urlSearchId) {
-            // Priority: URL Search ID for recovery
             setSearchId(urlSearchId);
 
             if (paymentStatus === 'success') {
                 setIsProcessing(true);
-                setSearchStatus('processing_deep'); // Custom status for post-payment
-                // Clear any "just searching" flags
+                setSearchStatus('processing_deep');
                 setIsInitialSearch(false);
             } else {
                 setIsInitialSearch(true);
                 setSearchStatus('scraping');
-            }
-        } else if (savedSearch) {
-            const { id, rubro: sRubro, provincia: sProv, localidades: sLocs, timestamp } = JSON.parse(savedSearch);
-            // Check if older than 24h
-            if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
-                setSearchId(id);
-                setRubro(sRubro);
-                setProvincia(sProv);
-                setLocalidades(sLocs);
-                setIsInitialSearch(true);
-            } else {
-                localStorage.removeItem('active_search');
             }
         }
     }, [searchParams]);
