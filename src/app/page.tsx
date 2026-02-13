@@ -463,6 +463,11 @@ function LeadsApp() {
                         clearInterval(timer);
                     } else if (status) {
                         setSearchStatus(status);
+                        // Rehydrate metadata if missing
+                        if (!rubro && response.data.rubro) setRubro(response.data.rubro);
+                        if ((!localidades || localidades.length === 0) && response.data.localidades) {
+                            setLocalidades(response.data.localidades);
+                        }
                     }
                 } catch (err) {
                     console.error('Bot polling error:', err);
@@ -493,8 +498,15 @@ function LeadsApp() {
                     // 1. Check Status first to see if n8n notified us
                     if (searchId) {
                         const statusRes = await axios.get(`/api/search/status?id=${searchId}`);
-                        const currentStatus = statusRes.data.status;
+                        const { status: currentStatus, rubro: sRubro, localidades: sLocs } = statusRes.data;
+
                         if (currentStatus) setSearchStatus(currentStatus);
+
+                        // Rehydrate metadata if missing (happens on post-payment return)
+                        if (!rubro && sRubro) setRubro(sRubro);
+                        if ((!localidades || localidades.length === 0) && sLocs) {
+                            setLocalidades(sLocs);
+                        }
 
                         if (currentStatus === 'completed_deep' || currentStatus?.toLowerCase().includes('enviados')) {
                             // If notified by n8n, we still want to try to get the leads one last time

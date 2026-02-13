@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
             error_message: data.error_message,
             results: data.results,
             count: data.total_leads,
-            bot_job_id: data.bot_job_id
+            bot_job_id: data.bot_job_id,
+            rubro: data.rubro,
+            localidades: data.localidad ? data.localidad.split(', ') : []
         });
 
     } catch (error) {
