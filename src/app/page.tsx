@@ -343,6 +343,7 @@ function LeadsApp() {
 
     const searchParams = useSearchParams();
     const router = useRouter();
+    const hasVerifiedPayment = React.useRef(false);
 
     // 1. Rehydration: Load active search from localStorage or URL
     useEffect(() => {
@@ -372,6 +373,21 @@ function LeadsApp() {
                 setIsProcessing(true);
                 setSearchStatus('processing_deep');
                 setIsInitialSearch(false);
+
+                // FALLBACK: Auto-verify payment if webhook is delayed
+                const paymentId = searchParams.get('payment_id') || searchParams.get('collection_id');
+                if (paymentId && !hasVerifiedPayment.current) {
+                    hasVerifiedPayment.current = true;
+                    console.log('Payment success detected in URL, triggering manual verification fallback...');
+                    axios.post('/api/payment/verify', {
+                        paymentId,
+                        searchId: urlSearchId
+                    }).then(res => {
+                        console.log('Manual payment verification result:', res.data);
+                    }).catch(err => {
+                        console.error('Manual payment verification failed:', err);
+                    });
+                }
             } else {
                 setIsInitialSearch(true);
                 setSearchStatus('scraping');
