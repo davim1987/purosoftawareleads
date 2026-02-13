@@ -554,8 +554,8 @@ function LeadsApp() {
                 setIsInitialSearch(true);
                 setSearchStatus('scraping');
 
-                // Update URL for recovery
-                const params = new URLSearchParams(searchParams.toString());
+                // Update URL for recovery and CLEAR payment status
+                const params = new URLSearchParams();
                 params.set('searchId', serverSearchId);
                 router.replace(`/?${params.toString()}`);
 
@@ -855,10 +855,10 @@ function LeadsApp() {
                                     {searchStatus === 'processing_deep' ? (
                                         <div className="flex flex-col items-center animate-pulse">
                                             <span className="text-xl font-black text-blue-600 tracking-tighter uppercase italic">
-                                                Verificando Pago...
+                                                Buscando Leads...
                                             </span>
                                             <span className="text-[10px] font-black text-blue-300 uppercase tracking-widest mt-1">
-                                                Preparando descarga de contactos
+                                                Extrayendo información de contacto completa
                                             </span>
                                         </div>
                                     ) : searchStatus.startsWith('Procesando') ? (
