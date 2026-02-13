@@ -434,7 +434,13 @@ function LeadsApp() {
 
         if (isProcessing) {
             timer = setInterval(async () => {
-                console.log('Polling for full results...');
+                // GUARD: Only poll if we have the necessary metadata
+                if (!rubro || !localidades || (Array.isArray(localidades) && localidades.length === 0)) {
+                    console.log('Skipping poll: Metadata not yet rehydrated.');
+                    return;
+                }
+
+                console.log('Polling for full results...', { rubro, localidades });
                 try {
                     const response = await axios.post(`/api/search?full=true`, {
                         rubro,
