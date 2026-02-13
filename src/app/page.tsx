@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import { PROVINCIAS, LOCALIDADES } from '@/lib/data';
-import { FaWhatsapp, FaEnvelope, FaSearch, FaCheck, FaExclamationTriangle, FaCreditCard } from 'react-icons/fa';
+import { FaSearch, FaWhatsapp, FaInstagram, FaFacebook, FaLinkedin, FaGlobe, FaEnvelope, FaMapMarkerAlt, FaClock, FaCheck, FaExclamationTriangle, FaDownload } from 'react-icons/fa';
 import { BiCheckShield } from 'react-icons/bi';
 import MercadoPagoButton from '@/components/MercadoPagoButton';
 
@@ -498,7 +498,7 @@ function LeadsApp() {
         if (status === 'error' || status === 'idle') return 0;
         if (status === 'geolocating') return 5;
         if (status === 'scraping') return 10;
-        if (status === 'processing_deep') return 95; // High progress for post-payment wait
+        if (status === 'processing_deep') return 15; // Start at 15% for better visual feedback
 
         // Parse "Procesando X (1/5)..."
         const match = status.match(/\((\d+)\/(\d+)\)/);
@@ -874,15 +874,62 @@ function LeadsApp() {
                     {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
                         <div className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
-                                <div className="h-16 flex items-center justify-center overflow-hidden w-full relative">
+                                <div className={`${searchStatus === 'processing_deep' ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
                                     {searchStatus === 'processing_deep' ? (
-                                        <div className="flex flex-col items-center animate-pulse">
-                                            <span className="text-xl font-black text-blue-600 tracking-tighter uppercase italic">
-                                                Buscando Leads...
-                                            </span>
-                                            <span className="text-[10px] font-black text-blue-300 uppercase tracking-widest mt-1">
-                                                Extrayendo información de contacto completa
-                                            </span>
+                                        <div className="flex flex-col items-center w-full max-w-lg">
+                                            {/* Immersive Animation Container */}
+                                            <div className="relative h-64 w-full flex items-center justify-center mb-4 perspective-1000">
+                                                {/* Central Hub (The Target) */}
+                                                <div className="relative z-10 w-32 h-32 bg-white rounded-3xl shadow-2xl flex items-center justify-center border-4 border-blue-500 animate-float overflow-hidden">
+                                                    <div className="absolute inset-0 bg-blue-50/50 animate-pulse"></div>
+                                                    <div className="relative z-20 flex flex-col items-center">
+                                                        <FaMapMarkerAlt className="text-4xl text-blue-600 mb-1" />
+                                                        <span className="text-[10px] font-black text-blue-900 uppercase tracking-tighter text-center px-2 leading-none">
+                                                            {localidades[0] || 'ZONA'}
+                                                        </span>
+                                                    </div>
+                                                    {/* Scan Line effect */}
+                                                    <div className="absolute inset-x-0 h-1 bg-blue-400/30 animate-scan z-30"></div>
+                                                </div>
+
+                                                {/* Flying Contact Icons */}
+                                                {[
+                                                    { Icon: FaWhatsapp, color: 'text-green-500', delay: '0s', tx: '150px', ty: '-100px' },
+                                                    { Icon: FaEnvelope, color: 'text-blue-400', delay: '0.8s', tx: '-140px', ty: '80px' },
+                                                    { Icon: FaInstagram, color: 'text-pink-500', delay: '1.5s', tx: '120px', ty: '120px' },
+                                                    { Icon: FaFacebook, color: 'text-blue-700', delay: '2.3s', tx: '-160px', ty: '-120px' },
+                                                ].map((item, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className="absolute animate-contact-fly flex items-center justify-center"
+                                                        style={{
+                                                            '--tw-translate-x': item.tx,
+                                                            '--tw-translate-y': item.ty,
+                                                            '--tw-dest-x': '0px',
+                                                            '--tw-dest-y': '0px',
+                                                            animationDelay: item.delay
+                                                        } as any}
+                                                    >
+                                                        <div className="p-3 bg-white rounded-full shadow-lg border border-gray-100">
+                                                            <item.Icon className={`text-2xl ${item.color}`} />
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+                                                {/* Pulse Rings */}
+                                                <div className="absolute w-48 h-48 border-4 border-blue-500/20 rounded-full animate-pulse-ring"></div>
+                                                <div className="absolute w-64 h-64 border-2 border-blue-400/10 rounded-full animate-pulse-ring delay-700"></div>
+                                            </div>
+
+                                            <div className="text-center mt-4">
+                                                <h3 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-700 tracking-tighter italic uppercase animate-pulse">
+                                                    BUSCANDO CONTACTOS...
+                                                </h3>
+                                                <p className="text-[11px] font-bold text-blue-400 uppercase tracking-[0.2em] mt-2 flex items-center justify-center gap-2">
+                                                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
+                                                    CONECTANDO CON {rubro.toUpperCase()} EN {localidades[0]?.toUpperCase()}
+                                                </p>
+                                            </div>
                                         </div>
                                     ) : searchStatus.startsWith('Procesando') ? (
                                         <div key={searchStatus} className="flex flex-col items-center animate-locality-ticker">
