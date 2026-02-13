@@ -487,9 +487,9 @@ function LeadsApp() {
 
         if (isProcessing) {
             timer = setInterval(async () => {
-                // GUARD: Only poll if we have the necessary metadata
-                if (!rubro || !localidades || (Array.isArray(localidades) && localidades.length === 0)) {
-                    console.log('Skipping poll: Metadata not yet rehydrated.');
+                // GUARD: Only poll if we have the searchId (rehydration happens inside loop)
+                if (!searchId) {
+                    console.log('Skipping poll: No searchId found.');
                     return;
                 }
 
@@ -550,7 +550,7 @@ function LeadsApp() {
                 } catch (err) {
                     console.error('Polling error:', err);
                 }
-            }, 5000); // Every 5 seconds
+            }, 3000); // Speed up to 3 seconds
         }
 
         return () => {
