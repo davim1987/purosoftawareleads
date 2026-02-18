@@ -266,8 +266,10 @@ export async function POST(req: NextRequest) {
 
                         // Update status to polling
                         await supabase.from('search_tracking').update({
-                            status: `Procesando ${validLocs.length} zonas en paralelo...`
+                            status: `Procesando (0/${validLocs.length})...`
                         }).eq('id', searchId);
+
+                        let completedCount = 0;
 
                         // Parallel Polling for all sub-jobs
                         console.log(`[Parallel Search] Polling sub-jobs: ${subJobIds.join(', ')}`);
@@ -288,33 +290,34 @@ export async function POST(req: NextRequest) {
                                 attempts++;
                             }
 
-                            if (jobStatus === 'ok' || jobStatus === 'completed') {
+                            if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success') {
                                 try {
-                                    console.log(`[Job ${jobId}] Downloading results...`);
+                                    console.log(`[Job ${jobId} - ${currentLoc}] Success! Downloading results...`);
                                     const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}/download`, { httpsAgent });
                                     const partLeads = parseCSV(csvResponse.data);
                                     console.log(`[Job ${jobId}] Found ${partLeads.length} leads in CSV.`);
 
                                     partLeads.forEach(l => {
-                                        let mail = l.extended_emails || l.email;
+                                        // Robust header mapping
+                                        let mail = l.extended_emails || l.email || l['email address'] || l.emails;
                                         if (!mail && l.emails) mail = typeof l.emails === 'string' ? l.emails.split(',')[0] : (l.emails[0] || 'No disponible');
 
                                         const leadObj = {
                                             id: l.place_id || l.id || l.cid || `lead-${Math.random().toString(36).substring(7)}`,
-                                            nombre: l.title || l.name || 'Nombre Reservado',
-                                            whatsapp: l.phone || l.whatsapp,
-                                            web: l.website || l.web,
+                                            nombre: l.title || l.name || l['business name'] || 'Nombre Reservado',
+                                            whatsapp: l.phone || l.whatsapp || l['phone number'] || l.phone_number,
+                                            web: l.website || l.web || l['website url'] || l.url,
                                             email: mail || 'No disponible',
-                                            direccion: l.address || l.complete_address || 'No disponible',
-                                            localidad: l.city || currentLoc,
-                                            rubro: l.category || rubro,
-                                            instagram: l.instagram || 'No disponible',
-                                            facebook: l.facebook || 'No disponible',
-                                            horario: l.opening_hours || l.hours || l.opening_hour || 'No disponible'
+                                            direccion: l.address || l.complete_address || l['full address'] || l.formatted_address || 'No disponible',
+                                            localidad: l.city || l.sublocality || currentLoc,
+                                            rubro: l.category || l.type || rubro,
+                                            instagram: l.instagram || l['instagram handle'] || 'No disponible',
+                                            facebook: l.facebook || l['facebook page'] || 'No disponible',
+                                            horario: l.opening_hours || l.hours || l['business hours'] || 'No disponible'
                                         };
 
                                         // Process socials
-                                        const searchFields = [l.website, l.web, l.webcity, l.emails, l.extended_emails].filter(Boolean);
+                                        const searchFields = [l.website, l.web, l.webcity, l.emails, l.extended_emails, l.description].filter(Boolean);
                                         if (leadObj.instagram === 'No disponible') {
                                             for (const f of searchFields) {
                                                 const h = extractSocialHandle(f, 'instagram');
@@ -335,6 +338,12 @@ export async function POST(req: NextRequest) {
                             } else {
                                 console.error(`[Job ${jobId}] Failed or timed out (Final Status: ${jobStatus})`);
                             }
+
+                            completedCount++;
+                            // Update granular status for the frontend
+                            await supabase.from('search_tracking').update({
+                                status: `Procesando (${completedCount}/${validLocs.length})...`
+                            }).eq('id', searchId);
                         }));
 
                         // Final Scoring and Saving

@@ -439,6 +439,7 @@ function LeadsApp() {
                     const { status, results: polledResults, count: polledCount, bot_job_id } = response.data;
 
                     if (bot_job_id && !searchParams.get('searchId')) {
+                        console.log(`[Search Link] Internal ID: ${searchId} -> Bot Job ID: ${bot_job_id}`);
                         // Sync with URL for recovery
                         const params = new URLSearchParams(searchParams.toString());
                         params.set('searchId', searchId);
