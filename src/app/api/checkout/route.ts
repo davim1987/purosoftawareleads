@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
                     },
                 ],
                 payer: {
-                    email: clientEmail,
+                    email: clientEmail || 'comprador@purosoftware.com',
                     phone: {
                         number: clientPhone
                     }

@@ -51,6 +51,9 @@ function PaymentModal({
     const pricePerContact = 100;
     const total = quantity * pricePerContact;
 
+    const isEmailValid = email && !emailError;
+    const isWhatsappValid = whatsapp.length === 10;
+
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-fade-in">
             <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full relative border border-gray-100 animate-scale-up overflow-hidden">
@@ -169,8 +172,8 @@ function PaymentModal({
                             provincia={provincia}
                             localidades={localidades}
                             coords={coords}
-                            disabled={!email || !!emailError || (whatsapp.length > 0 && whatsapp.length < 10)}
-                            className={`w-full py-4.5 rounded-2xl font-black text-xl shadow-2xl transition-all flex justify-center items-center gap-3 text-white transform active:scale-95 ${email && !emailError && (whatsapp.length === 10 || whatsapp.length === 0)
+                            disabled={(!email && whatsapp.length < 10) || !!emailError || (whatsapp.length > 0 && whatsapp.length < 10)}
+                            className={`w-full py-4.5 rounded-2xl font-black text-xl shadow-2xl transition-all flex justify-center items-center gap-3 text-white transform active:scale-95 ${(isEmailValid || isWhatsappValid) && !emailError
                                 ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:shadow-blue-500/40 hover:-translate-y-1'
                                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                                 }`}
