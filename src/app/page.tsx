@@ -95,6 +95,7 @@ function PaymentModal({
                                     setQuantity(val);
                                 }}
                                 className="flex-1 px-5 py-3 border-2 border-gray-100 rounded-2xl text-black font-black text-lg focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+                                style={{ color: '#000000' }}
                             />
                             <button
                                 onClick={() => setQuantity(totalAvailable)}
@@ -124,6 +125,7 @@ function PaymentModal({
                                 }}
                                 className={`w-full px-5 py-3 border-2 rounded-2xl text-black font-medium focus:ring-4 transition-all outline-none ${emailError ? 'border-red-100 bg-red-50 focus:ring-red-100 focus:border-red-400' : 'border-gray-100 focus:border-blue-500 focus:ring-blue-500/10'
                                     }`}
+                                style={{ color: '#000000' }}
                             />
                             {emailError && <p className="text-red-500 text-[10px] mt-1 font-bold">{emailError}</p>}
                         </div>
@@ -138,6 +140,7 @@ function PaymentModal({
                                     onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, ''))}
                                     maxLength={10}
                                     className="w-full pl-14 pr-5 py-3 border-2 border-gray-100 rounded-2xl text-black font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+                                    style={{ color: '#000000' }}
                                 />
                             </div>
                         </div>
@@ -776,6 +779,7 @@ function LeadsApp() {
                                     value={localidadSearch}
                                     onChange={(e) => setLocalidadSearch(e.target.value)}
                                     className="w-full px-6 py-3 border border-gray-300 rounded-xl text-sm text-black bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all"
+                                    style={{ color: '#000000' }}
                                 />
                                 <FaSearch className="absolute right-4 top-4 text-gray-400 text-xs" />
                             </div>
@@ -1219,7 +1223,9 @@ function LeadsApp() {
           @apply w-full flex items-center border-2 border-gray-100 rounded-xl bg-white shadow-sm focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-500 transition-all duration-200 overflow-hidden;
         }
         .input-field {
-          @apply flex-1 px-4 py-3 bg-transparent text-black outline-none placeholder-gray-500 font-black;
+          @apply flex-1 px-4 py-3 bg-transparent outline-none placeholder-gray-400;
+          color: #000000 !important;
+          font-weight: 900 !important;
         }
         .animate-scale-up {
           animation: scale-up 0.3s ease-out forwards;
