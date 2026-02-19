@@ -172,8 +172,8 @@ function PaymentModal({
                             provincia={provincia}
                             localidades={localidades}
                             coords={coords}
-                            disabled={(!email && whatsapp.length < 10) || !!emailError || (whatsapp.length > 0 && whatsapp.length < 10)}
-                            className={`w-full py-4.5 rounded-2xl font-black text-xl shadow-2xl transition-all flex justify-center items-center gap-3 text-white transform active:scale-95 ${(isEmailValid || isWhatsappValid) && !emailError
+                            disabled={!(isEmailValid || isWhatsappValid)}
+                            className={`w-full py-4.5 rounded-2xl font-black text-xl shadow-2xl transition-all flex justify-center items-center gap-3 text-white transform active:scale-95 ${isEmailValid || isWhatsappValid
                                 ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:shadow-blue-500/40 hover:-translate-y-1'
                                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                                 }`}
@@ -427,12 +427,12 @@ function LeadsApp() {
                 setDisplayProgress(prev => {
                     if (prev >= 92) return prev; // Stay below 95% until done
                     // Slower as it gets higher
-                    const increment = prev < 40 ? 2 : (prev < 70 ? 1 : 0.5);
+                    const increment = prev < 40 ? 4 : (prev < 70 ? 2 : 1);
                     return prev + increment;
                 });
-            }, 2000);
+            }, 1000); // Faster progress update
 
-            timer = setInterval(async () => {
+            const pollStatus = async () => {
                 console.log('Polling for bot progress...', searchId);
                 try {
                     const response = await axios.get(`/api/search/status?id=${searchId}`);
@@ -467,7 +467,6 @@ function LeadsApp() {
                         setSearchStatus('error');
                         setDisplayProgress(0);
                         setError('Ocurrió un error en la búsqueda paralela.');
-                        clearInterval(timer);
                     } else if (status) {
                         setSearchStatus(status);
                         // Rehydrate metadata if missing
@@ -479,7 +478,12 @@ function LeadsApp() {
                 } catch (err) {
                     console.error('Bot polling error:', err);
                 }
-            }, 3000);
+            };
+
+            // Immediate check
+            pollStatus();
+
+            timer = setInterval(pollStatus, 1500); // Optimized to 1.5s
         }
         return () => {
             if (timer) clearInterval(timer);
@@ -591,6 +595,7 @@ function LeadsApp() {
     const handleResetSearch = () => {
         setIsInitialSearch(false);
         setIsLoading(false);
+        setIsProcessing(false);
         setSearchId(null);
         setSearchStatus('idle');
         setError(null);
@@ -598,6 +603,9 @@ function LeadsApp() {
         setCount(null);
         setDisplayProgress(0);
         setSearchCoords({});
+        setPollCount(0);
+        setCurrentLocIndex(0);
+        setIsPremiumWait(false);
         localStorage.removeItem('active_search');
 
         // Clear URL
@@ -637,9 +645,9 @@ function LeadsApp() {
         setIsLoading(true);
         setError(null);
         if (!fromPolling) {
-            setResults([]);
-            setCount(null);
-            setDisplayProgress(0);
+            handleResetSearch();
+            // Need to set isLoading back to true since handleResetSearch sets it to false
+            setIsLoading(true);
         }
 
         try {
@@ -685,7 +693,7 @@ function LeadsApp() {
             setPurchaseQuantity(totalAvailable > 0 ? totalAvailable : 1);
 
             if (response.data.count === 0) {
-                setError('No encontramos resultados para esta búsqueda.');
+                setError('No encontramos resultados for esta búsqueda.');
             } else if (fromPolling) {
                 // If we come from polling, explicitly stop the loading and maybe show a brief success state
                 setIsLoading(false);
@@ -1256,6 +1264,7 @@ function LeadsApp() {
         </main>
     );
 }
+
 export default function Home() {
     return (
         <Suspense fallback={

@@ -278,8 +278,7 @@ export async function POST(req: NextRequest) {
                             let jobStatus = 'pending';
                             let attempts = 0;
 
-                            while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'failed' && attempts < 80) {
-                                await new Promise(r => setTimeout(r, 3000)); // Tightened polling from 5s to 3s
+                            while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'success' && jobStatus !== 'failed' && attempts < 80) {
                                 try {
                                     const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, { httpsAgent });
                                     jobStatus = statusResponse.data.Status || statusResponse.data.status;
@@ -287,6 +286,10 @@ export async function POST(req: NextRequest) {
                                 } catch (e) {
                                     console.error(`[Job ${jobId}] Polling error:`, e);
                                 }
+
+                                if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success' || jobStatus === 'failed') break;
+
+                                await new Promise(r => setTimeout(r, 1000)); // Optimized to 1s
                                 attempts++;
                             }
 
