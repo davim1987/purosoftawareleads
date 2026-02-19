@@ -222,12 +222,18 @@ function LocalitiesModal({
                 </div>
 
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                    {localidades.map((loc, idx) => (
-                        <div key={idx} className="flex items-center gap-3 p-3 bg-blue-50/50 rounded-xl border border-blue-100/50 text-blue-900 font-bold text-sm">
-                            <span className="w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-[10px] shrink-0 font-black">{idx + 1}</span>
-                            {loc}
+                    {localidades.length > 0 ? (
+                        localidades.map((loc, idx) => (
+                            <div key={idx} className="flex items-center gap-3 p-3 bg-blue-50/50 rounded-xl border border-blue-100/50 text-blue-900 font-bold text-sm">
+                                <span className="w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-[10px] shrink-0 font-black">{idx + 1}</span>
+                                {loc}
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-center py-10 text-gray-400 font-bold">
+                            Cargando datos de regiones...
                         </div>
-                    ))}
+                    )}
                 </div>
 
                 <div className="mt-8 pt-6 border-t border-gray-100">
@@ -500,6 +506,15 @@ function LeadsApp() {
                         router.replace(`/?${params.toString()}`);
                     }
 
+                    if (status) {
+                        setSearchStatus(status);
+                        // Rehydrate metadata if missing (CRITICAL for the LocsModal)
+                        if (!rubro && response.data.rubro) setRubro(response.data.rubro);
+                        if ((!localidades || localidades.length === 0) && response.data.localidades) {
+                            setLocalidades(response.data.localidades);
+                        }
+                    }
+
                     if (status === 'completed') {
                         setIsInitialSearch(false);
                         setIsLoading(false);
@@ -521,13 +536,6 @@ function LeadsApp() {
                         setSearchStatus('error');
                         setDisplayProgress(0);
                         setError('Ocurrió un error en la búsqueda paralela.');
-                    } else if (status) {
-                        setSearchStatus(status);
-                        // Rehydrate metadata if missing
-                        if (!rubro && response.data.rubro) setRubro(response.data.rubro);
-                        if ((!localidades || localidades.length === 0) && response.data.localidades) {
-                            setLocalidades(response.data.localidades);
-                        }
                     }
                 } catch (err) {
                     console.error('Bot polling error:', err);
