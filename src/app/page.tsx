@@ -45,11 +45,12 @@ function PaymentModal({
 }) {
     const [email, setEmail] = useState('');
     const [whatsapp, setWhatsapp] = useState('');
-    const [quantity, setQuantity] = useState(totalAvailable);
+    const [quantity, setQuantity] = useState<number | string>(totalAvailable);
     const [emailError, setEmailError] = useState('');
 
     const pricePerContact = 100;
-    const total = quantity * pricePerContact;
+    const numericQuantity = typeof quantity === 'string' ? (parseInt(quantity) || 0) : quantity;
+    const total = numericQuantity * pricePerContact;
 
     const isEmailValid = email && !emailError;
     const isWhatsappValid = whatsapp.length === 10;
@@ -91,10 +92,14 @@ function PaymentModal({
                                 max={totalAvailable}
                                 value={quantity}
                                 onChange={(e) => {
-                                    let val = parseInt(e.target.value);
-                                    if (isNaN(val)) val = 1;
+                                    const valStr = e.target.value;
+                                    if (valStr === '') {
+                                        setQuantity('');
+                                        return;
+                                    }
+                                    let val = parseInt(valStr);
                                     if (val > totalAvailable) val = totalAvailable;
-                                    if (val < 1) val = 1;
+                                    if (val < 0) val = 0;
                                     setQuantity(val);
                                 }}
                                 className="flex-1 px-5 py-3 border-2 border-gray-100 rounded-2xl text-black font-black text-lg focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
@@ -167,7 +172,7 @@ function PaymentModal({
                             searchId={searchId}
                             clientPhone={`+549${whatsapp}`}
                             clientEmail={email}
-                            quantity={quantity}
+                            quantity={numericQuantity}
                             rubro={rubro}
                             provincia={provincia}
                             localidades={localidades}
