@@ -228,10 +228,9 @@ export async function POST(req: NextRequest) {
                     throw new Error('No se pudo geolocalizar ninguna localidad.');
                 }
 
-                // Create initial tracking record
+                // Create initial tracking record (without bot_job_id yet)
                 await supabase.from('search_tracking').upsert({
                     id: searchId,
-                    bot_job_id: searchId, // We use our UUID as the anchor
                     status: `Geolocalizando ${validLocs.length} zonas...`,
                     rubro,
                     localidad: validLocs.join(', ')
@@ -262,11 +261,21 @@ export async function POST(req: NextRequest) {
                         });
 
                         const jobResponses = await Promise.all(jobRequests);
-                        subJobIds.push(...jobResponses.map(r => r.data.id || r.data.ID));
+                        const actualJobIds = jobResponses.map(r => {
+                            const id = r.data.id || r.data.ID || r.data.job_id;
+                            console.log(`[Parallel Search] Bot response for job:`, JSON.stringify(r.data));
+                            return id;
+                        }).filter(Boolean);
 
-                        // Update status to polling
+                        subJobIds.push(...actualJobIds);
+
+                        // Update status and store ACTUAL bot job IDs
+                        const botJobIdString = subJobIds.join(', ');
+                        console.log(`[Parallel Search] Storing actual bot job IDs: ${botJobIdString}`);
+
                         await supabase.from('search_tracking').update({
-                            status: `Procesando (0/${validLocs.length})...`
+                            status: `Procesando (0/${validLocs.length})...`,
+                            bot_job_id: botJobIdString
                         }).eq('id', searchId);
 
                         let completedCount = 0;
@@ -278,7 +287,7 @@ export async function POST(req: NextRequest) {
                             let jobStatus = 'pending';
                             let attempts = 0;
 
-                            while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'success' && jobStatus !== 'failed' && attempts < 80) {
+                            while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'success' && jobStatus !== 'failed' && jobStatus !== 'finished' && jobStatus !== 'done' && jobStatus !== 'error' && attempts < 80) {
                                 try {
                                     const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, { httpsAgent });
                                     jobStatus = statusResponse.data.Status || statusResponse.data.status;
@@ -287,13 +296,13 @@ export async function POST(req: NextRequest) {
                                     console.error(`[Job ${jobId}] Polling error:`, e);
                                 }
 
-                                if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success' || jobStatus === 'failed') break;
+                                if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success' || jobStatus === 'failed' || jobStatus === 'finished' || jobStatus === 'done' || jobStatus === 'error') break;
 
                                 await new Promise(r => setTimeout(r, 1000)); // Optimized to 1s
                                 attempts++;
                             }
 
-                            if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success') {
+                            if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success' || jobStatus === 'finished' || jobStatus === 'done') {
                                 try {
                                     console.log(`[Job ${jobId} - ${currentLoc}] Success! Downloading results...`);
                                     const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}/download`, { httpsAgent });

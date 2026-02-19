@@ -433,7 +433,8 @@ function LeadsApp() {
             }, 1000); // Faster progress update
 
             const pollStatus = async () => {
-                console.log('Polling for bot progress...', searchId);
+                if (!searchId) return;
+                console.log(`[Frontend] Polling status for searchId: ${searchId}`);
                 try {
                     const response = await axios.get(`/api/search/status?id=${searchId}`);
                     const { status, results: polledResults, count: polledCount, bot_job_id } = response.data;
