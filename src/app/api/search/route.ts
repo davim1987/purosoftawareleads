@@ -292,13 +292,23 @@ export async function POST(req: NextRequest) {
                             let attempts = 0;
 
                             // Polling loop with more attempts and terminal states
-                            while (attempts < 200) {
+                            while (attempts < 600) {
                                 try {
-                                    const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, { httpsAgent });
+                                    const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, {
+                                        httpsAgent,
+                                        timeout: 10000 // 10s timeout for status check
+                                    });
                                     jobStatus = (statusResponse.data.Status || statusResponse.data.status || 'pending').toLowerCase();
                                     console.log(`[Job ${jobId}] Status: ${jobStatus} (Attempt ${attempts + 1})`);
-                                } catch (e) {
-                                    console.error(`[Job ${jobId}] Polling error:`, e);
+
+                                    // Granular update for the user to see progress on the server
+                                    if (attempts % 2 === 0) { // Every 2 attempts to avoid DB spam
+                                        await supabase.from('search_tracking').update({
+                                            status: `Escaneando (${completedCount}/${validLocs.length}) - Bot: ${jobStatus} (Intento ${attempts + 1})...`
+                                        }).eq('id', searchId);
+                                    }
+                                } catch (e: any) {
+                                    console.error(`[Job ${jobId}] Polling error:`, e.message);
                                 }
 
                                 if (['ok', 'completed', 'success', 'failed', 'finished', 'done', 'error'].includes(jobStatus)) break;
