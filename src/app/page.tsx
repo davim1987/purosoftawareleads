@@ -196,6 +196,53 @@ function PaymentModal({
     );
 }
 
+// Localities Modal Component
+function LocalitiesModal({
+    localidades,
+    onClose
+}: {
+    localidades: string[],
+    onClose: () => void
+}) {
+    return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[60] backdrop-blur-md animate-fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full relative border border-gray-100 animate-scale-up">
+                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 text-3xl font-light transition cursor-pointer"
+                >
+                    &times;
+                </button>
+
+                <div className="text-center mb-6">
+                    <h3 className="text-2xl font-black text-gray-900 mb-2 uppercase tracking-tight">Regiones Seleccionadas 📍</h3>
+                    <p className="text-gray-500 text-sm">Estas son las localidades incluidas en tu búsqueda.</p>
+                </div>
+
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    {localidades.map((loc, idx) => (
+                        <div key={idx} className="flex items-center gap-3 p-3 bg-blue-50/50 rounded-xl border border-blue-100/50 text-blue-900 font-bold text-sm">
+                            <span className="w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-[10px] shrink-0 font-black">{idx + 1}</span>
+                            {loc}
+                        </div>
+                    ))}
+                </div>
+
+                <div className="mt-8 pt-6 border-t border-gray-100">
+                    <button
+                        onClick={onClose}
+                        className="w-full py-4 bg-gray-900 text-white font-black rounded-2xl hover:bg-black transition-colors shadow-lg"
+                    >
+                        CERRAR LISTADO
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // Sample Data
 const sampleLeads: Lead[] = [
     {
@@ -339,6 +386,7 @@ function LeadsApp() {
     const [customerEmail, setCustomerEmail] = useState('');
     const [localidadSearch, setLocalidadSearch] = useState(''); // New search state
     const [showSampleModal, setShowSampleModal] = useState(false);
+    const [showLocsModal, setShowLocsModal] = useState(false);
 
     // Search-specific states
     const [searchId, setSearchId] = useState<string | null>(null);
@@ -954,37 +1002,50 @@ function LeadsApp() {
                         </div>
                     )}
 
-                    {/* Search Button & Muestra */}
-                    <div className="mt-8 flex flex-wrap items-center justify-center gap-6">
-                        <button
-                            onClick={() => handleSearch()}
-                            disabled={isLoading || isInitialSearch}
-                            className={`
-                                w-full md:w-auto px-10 py-4 rounded-full text-white font-black text-xl shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3
-                                ${(isLoading || isInitialSearch) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}
-                            `}
-                        >
-                            {(isLoading || isInitialSearch) ? (
-                                <>
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    Buscando negocios...
-                                </>
-                            ) : (
-                                <>
-                                    <FaSearch /> BUSCAR NEGOCIOS
-                                </>
-                            )}
-                        </button>
+                    {/* Search Button & Muestra & Nueva Búsqueda */}
+                    <div className="mt-8 flex flex-col items-center gap-6">
+                        <div className="flex flex-wrap items-center justify-center gap-6 w-full">
+                            <button
+                                onClick={() => handleSearch()}
+                                disabled={isLoading || isInitialSearch}
+                                className={`
+                                    w-full md:w-auto px-10 py-4 rounded-full text-white font-black text-xl shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3
+                                    ${(isLoading || isInitialSearch) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}
+                                `}
+                            >
+                                {(isLoading || isInitialSearch) ? (
+                                    <>
+                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Buscando negocios...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FaSearch /> BUSCAR NEGOCIOS
+                                    </>
+                                )}
+                            </button>
+                        </div>
 
-                        <button
-                            onClick={() => setShowSampleModal(true)}
-                            className="px-8 py-3.5 border-2 border-gray-100 text-gray-400 hover:text-blue-600 hover:border-blue-100 hover:bg-blue-50/30 font-bold rounded-full transition-all flex items-center gap-2 text-sm bg-white shadow-sm transform hover:-translate-y-1"
-                        >
-                            <span className="text-lg">👀</span> Muestra
-                        </button>
+                        <div className="flex flex-wrap items-center justify-center gap-4">
+                            <button
+                                onClick={() => setShowSampleModal(true)}
+                                className="px-8 py-3.5 border-2 border-gray-100 text-gray-400 hover:text-blue-600 hover:border-blue-100 hover:bg-blue-50/30 font-bold rounded-full transition-all flex items-center gap-2 text-sm bg-white shadow-sm transform hover:-translate-y-1"
+                            >
+                                <span className="text-lg">👀</span> Muestra
+                            </button>
+
+                            {results.length > 0 && !isLoading && !isInitialSearch && (
+                                <button
+                                    onClick={handleResetSearch}
+                                    className="px-8 py-3.5 border-2 border-red-50 text-red-400 hover:text-red-600 hover:border-red-100 hover:bg-red-50/30 font-bold rounded-full transition-all flex items-center gap-2 text-sm bg-white shadow-sm transform hover:-translate-y-1"
+                                >
+                                    <FaSearch className="text-[10px]" /> Nueva Búsqueda
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Progress Bar & Status */}
@@ -1131,10 +1192,10 @@ function LeadsApp() {
                                         </div>
                                         <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
                                             <button
-                                                onClick={handleResetSearch}
+                                                onClick={() => setShowLocsModal(true)}
                                                 className="px-6 py-3 text-white/80 hover:text-white font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 border border-white/20 hover:border-white/40 rounded-xl"
                                             >
-                                                <FaSearch className="text-[10px]" /> Nueva Búsqueda
+                                                <FaMapMarkerAlt className="text-[10px]" /> Localidades Seleccionadas
                                             </button>
                                             <button
                                                 onClick={() => setShowPayment(true)}
@@ -1286,6 +1347,12 @@ function LeadsApp() {
           100% { opacity: 1; transform: translateY(0); }
         }
       `}</style>
+            {showLocsModal && (
+                <LocalitiesModal
+                    localidades={localidades}
+                    onClose={() => setShowLocsModal(false)}
+                />
+            )}
         </main>
     );
 }
