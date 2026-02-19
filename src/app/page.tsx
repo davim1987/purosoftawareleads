@@ -408,7 +408,6 @@ function LeadsApp() {
         }
     }, [searchParams]);
 
-    // 2. Initial Search Polling (Direct Bot Integration)
     React.useEffect(() => {
         let timer: NodeJS.Timeout;
         let ticker: NodeJS.Timeout;
@@ -437,7 +436,9 @@ function LeadsApp() {
                 console.log(`[Frontend] Polling status for searchId: ${searchId}`);
                 try {
                     const response = await axios.get(`/api/search/status?id=${searchId}`);
-                    const { status, results: polledResults, count: polledCount, bot_job_id } = response.data;
+                    const { status, results: polledResults, count: polledCount, bot_job_id, error: serverError } = response.data;
+
+                    console.log(`[Frontend] Server response for ${searchId}:`, { status, count: polledCount, bot_job_id, hasResults: !!polledResults, error: serverError });
 
                     if (bot_job_id && !searchParams.get('searchId')) {
                         console.log(`[Search Link] Internal ID: ${searchId} -> Bot Job ID: ${bot_job_id}`);
@@ -483,7 +484,6 @@ function LeadsApp() {
 
             // Immediate check
             pollStatus();
-
             timer = setInterval(pollStatus, 1500); // Optimized to 1.5s
         }
         return () => {
@@ -491,7 +491,7 @@ function LeadsApp() {
             if (ticker) clearInterval(ticker);
             if (progressInterval) clearInterval(progressInterval);
         };
-    }, [isInitialSearch, searchId, localidades.length, searchParams]);
+    }, [isInitialSearch, searchId, localidades.length, searchParams, rubro, router]);
 
     // 3. Post-Payment Polling (Polling for full results)
     React.useEffect(() => {
