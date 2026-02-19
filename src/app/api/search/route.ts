@@ -17,15 +17,19 @@ function parseCSV(csvText: string) {
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
     if (lines.length < 2) return [];
 
+    // Detect separator (auto-comma or semi-colon)
+    const firstLine = lines[0];
+    const separator = firstLine.includes(';') && (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+
     const splitCSVLine = (line: string) => {
-        const result = [];
+        const result: string[] = [];
         let cur = "";
         let inQuote = false;
         for (let i = 0; i < line.length; i++) {
             const char = line[i];
             if (char === '"') {
                 inQuote = !inQuote;
-            } else if (char === ',' && !inQuote) {
+            } else if (char === separator && !inQuote) {
                 result.push(cur.trim().replace(/^"|"$/g, ''));
                 cur = "";
             } else {
@@ -36,13 +40,13 @@ function parseCSV(csvText: string) {
         return result;
     };
 
-    const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase());
+    const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase().trim());
 
-    return lines.slice(1).map(line => {
+    return lines.slice(1).map((line: string) => {
         const values = splitCSVLine(line);
         const obj: any = {};
-        headers.forEach((header, i) => {
-            obj[header] = values[i] || null;
+        headers.forEach((header: string, i: number) => {
+            if (header) obj[header] = values[i] || null;
         });
         return obj;
     });
@@ -287,25 +291,31 @@ export async function POST(req: NextRequest) {
                             let jobStatus = 'pending';
                             let attempts = 0;
 
-                            while (jobStatus !== 'ok' && jobStatus !== 'completed' && jobStatus !== 'success' && jobStatus !== 'failed' && jobStatus !== 'finished' && jobStatus !== 'done' && jobStatus !== 'error' && attempts < 80) {
+                            // Polling loop with more attempts and terminal states
+                            while (attempts < 200) {
                                 try {
                                     const statusResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}`, { httpsAgent });
-                                    jobStatus = statusResponse.data.Status || statusResponse.data.status;
+                                    jobStatus = (statusResponse.data.Status || statusResponse.data.status || 'pending').toLowerCase();
                                     console.log(`[Job ${jobId}] Status: ${jobStatus} (Attempt ${attempts + 1})`);
                                 } catch (e) {
                                     console.error(`[Job ${jobId}] Polling error:`, e);
                                 }
 
-                                if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success' || jobStatus === 'failed' || jobStatus === 'finished' || jobStatus === 'done' || jobStatus === 'error') break;
+                                if (['ok', 'completed', 'success', 'failed', 'finished', 'done', 'error'].includes(jobStatus)) break;
 
-                                await new Promise(r => setTimeout(r, 1000)); // Optimized to 1s
+                                await new Promise(r => setTimeout(r, 1000));
                                 attempts++;
                             }
 
-                            if (jobStatus === 'ok' || jobStatus === 'completed' || jobStatus === 'success' || jobStatus === 'finished' || jobStatus === 'done') {
+                            if (['ok', 'completed', 'success', 'finished', 'done'].includes(jobStatus)) {
                                 try {
                                     console.log(`[Job ${jobId} - ${currentLoc}] Success! Downloading results...`);
                                     const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}/download`, { httpsAgent });
+
+                                    // Log a sample of the raw content for debugging
+                                    const rawSample = typeof csvResponse.data === 'string' ? csvResponse.data.substring(0, 150) : 'JSON Payload';
+                                    console.log(`[Job ${jobId}] Raw content sample: [${rawSample}]`);
+
                                     const partLeads = parseCSV(csvResponse.data);
                                     console.log(`[Job ${jobId}] Found ${partLeads.length} leads in CSV.`);
 
