@@ -607,11 +607,24 @@ function LeadsApp() {
         setPollCount(0);
         setCurrentLocIndex(0);
         setIsPremiumWait(false);
+
+        // Limpieza de campos de formulario
+        setRubro('');
+        setProvincia('');
+        setLocalidades([]);
+        setLocalidadSearch('');
+
+        // Limpieza de datos de contacto
+        setPurchaseEmail('');
+        setPurchaseWhatsapp('');
+        setEmailError('');
+
         localStorage.removeItem('active_search');
 
         // Clear URL
         const params = new URLSearchParams(searchParams.toString());
         params.delete('searchId');
+        params.delete('payment');
         router.replace(`/?${params.toString()}`);
     };
 
