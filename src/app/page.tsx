@@ -646,8 +646,15 @@ function LeadsApp() {
         setIsLoading(true);
         setError(null);
         if (!fromPolling) {
+            // Limpieza inmediata y explícita para evitar "datos fantasma"
+            setResults([]);
+            setCount(null);
+            setSearchId(null);
+            setSearchStatus('idle');
+            setDisplayProgress(0);
+
+            // También ejecutamos la lógica de reset general
             handleResetSearch();
-            // Need to set isLoading back to true since handleResetSearch sets it to false
             setIsLoading(true);
         }
 
@@ -1090,7 +1097,7 @@ function LeadsApp() {
                     return (
                         <>
                             {/* Results Section (Teaser) */}
-                            {results.length > 0 && (
+                            {results.length > 0 && !isLoading && !isInitialSearch && (
                                 <div className="animate-fade-in-up">
                                     <div className="mb-8 p-6 bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border-b-4 border-blue-800 animate-fade-in-up">
                                         <div className="flex items-center gap-4">
