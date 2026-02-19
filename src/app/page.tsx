@@ -87,19 +87,18 @@ function PaymentModal({
                         </div>
                         <div className="flex items-center gap-3">
                             <input
-                                type="number"
-                                min="1"
-                                max={totalAvailable}
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
                                 value={quantity}
                                 onChange={(e) => {
-                                    const valStr = e.target.value;
+                                    const valStr = e.target.value.replace(/\D/g, '');
                                     if (valStr === '') {
                                         setQuantity('');
                                         return;
                                     }
                                     let val = parseInt(valStr);
                                     if (val > totalAvailable) val = totalAvailable;
-                                    if (val < 0) val = 0;
                                     setQuantity(val);
                                 }}
                                 className="flex-1 px-5 py-3 border-2 border-gray-100 rounded-2xl text-black font-black text-lg focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
