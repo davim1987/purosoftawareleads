@@ -3,10 +3,10 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
-import { PROVINCIAS, LOCALIDADES } from '@/lib/data';
 import { FaSearch, FaWhatsapp, FaInstagram, FaFacebook, FaLinkedin, FaGlobe, FaEnvelope, FaMapMarkerAlt, FaClock, FaCheck, FaExclamationTriangle, FaDownload } from 'react-icons/fa';
 import { BiCheckShield } from 'react-icons/bi';
 import MercadoPagoButton from '@/components/MercadoPagoButton';
+import LocalidadSelector from '@/components/LocalidadSelector';
 
 interface Lead {
     id: string;
@@ -384,13 +384,15 @@ function LeadsApp() {
     const [rubro, setRubro] = useState('');
     const [provincia, setProvincia] = useState('');
     const [localidades, setLocalidades] = useState<string[]>([]);
+    const [dynamicProvincias, setDynamicProvincias] = useState<{ id: number, provincia: string }[]>([]);
+    const [dynamicLocalidades, setDynamicLocalidades] = useState<Record<string, string[]>>({});
+    const [isLoadingGeo, setIsLoadingGeo] = useState({ provinces: false, localities: false });
     const [isLoading, setIsLoading] = useState(false);
     const [results, setResults] = useState<Lead[]>([]);
     const [count, setCount] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [showPayment, setShowPayment] = useState(false);
     const [customerEmail, setCustomerEmail] = useState('');
-    const [localidadSearch, setLocalidadSearch] = useState(''); // New search state
     const [showSampleModal, setShowSampleModal] = useState(false);
     const [showLocsModal, setShowLocsModal] = useState(false);
 
@@ -400,7 +402,6 @@ function LeadsApp() {
     const [isProcessing, setIsProcessing] = useState(false); // Polling for bot or MP
     const [isInitialSearch, setIsInitialSearch] = useState(false); // Polling for bot
     const [pollCount, setPollCount] = useState(0);
-    const [expandedZones, setExpandedZones] = useState<string[]>([]); // To toggle zone visibility
     const [currentLocIndex, setCurrentLocIndex] = useState(0);
     const [displayProgress, setDisplayProgress] = useState(0);
     const [searchCoords, setSearchCoords] = useState<Record<string, { lat: number, lon: number }>>({});
@@ -415,6 +416,53 @@ function LeadsApp() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const hasVerifiedPayment = React.useRef(false);
+
+    useEffect(() => {
+        const loadProvincias = async () => {
+            setIsLoadingGeo(prev => ({ ...prev, provinces: true }));
+            try {
+                const res = await axios.get('/api/geo/provincias');
+                setDynamicProvincias(res.data);
+            } catch (error) {
+                console.error('Error loading provinces:', error);
+            } finally {
+                setIsLoadingGeo(prev => ({ ...prev, provinces: false }));
+            }
+        };
+        loadProvincias();
+    }, []);
+
+    useEffect(() => {
+        const loadLocalidades = async () => {
+            if (!provincia) {
+                setDynamicLocalidades({});
+                return;
+            }
+
+            const nameToId: Record<string, number> = { "Buenos Aires": 1, "Buenos Aires-GBA": 2 };
+            const provinciaId = nameToId[provincia];
+
+            if (!provinciaId) return;
+
+            setIsLoadingGeo(prev => ({ ...prev, localities: true }));
+            try {
+                const res = await axios.get(`/api/geo/localidades?provincia_id=${provinciaId}`);
+                // Group by zone
+                const grouped = res.data.reduce((acc: Record<string, string[]>, curr: { localidad: string, zona: string }) => {
+                    const zone = curr.zona || 'Sin Zona';
+                    if (!acc[zone]) acc[zone] = [];
+                    acc[zone].push(curr.localidad);
+                    return acc;
+                }, {});
+                setDynamicLocalidades(grouped);
+            } catch (error) {
+                console.error('Error loading localities:', error);
+            } finally {
+                setIsLoadingGeo(prev => ({ ...prev, localities: false }));
+            }
+        };
+        loadLocalidades();
+    }, [provincia]);
 
     // 1. Rehydration: Load active search from localStorage or URL
     useEffect(() => {
@@ -672,7 +720,6 @@ function LeadsApp() {
         setRubro('');
         setProvincia('');
         setLocalidades([]);
-        setLocalidadSearch('');
 
         // Limpieza de datos de contacto
         setPurchaseEmail('');
@@ -848,9 +895,10 @@ function LeadsApp() {
                                     value={provincia}
                                     onChange={handleProvinciaChange}
                                     className="input-field cursor-pointer font-black w-full pl-6"
+                                    disabled={isLoadingGeo.provinces}
                                 >
-                                    <option value="">Provincia</option>
-                                    {PROVINCIAS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                                    <option value="">{isLoadingGeo.provinces ? 'Cargando provincias...' : 'Provincia'}</option>
+                                    {dynamicProvincias.map(p => <option key={p.id} value={p.provincia}>{p.provincia}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -863,144 +911,20 @@ function LeadsApp() {
                                 Seleccioná las localidades (máximo 10)
                             </label>
 
-                            {/* Search Filter */}
-                            <div className="mb-3 relative">
-                                <input
-                                    type="text"
-                                    placeholder="Buscar localidad..."
-                                    value={localidadSearch}
-                                    onChange={(e) => setLocalidadSearch(e.target.value)}
-                                    className="w-full px-6 py-3 border border-gray-300 rounded-xl text-sm text-black bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all"
-                                    style={{ color: '#000000' }}
-                                />
-                                <FaSearch className="absolute right-4 top-4 text-gray-400 text-xs" />
-                            </div>
-
                             <div className="max-h-64 overflow-y-auto p-2 border rounded-lg bg-gray-50">
                                 {(() => {
-                                    const rawData = LOCALIDADES[provincia] || [];
-                                    const isZoned = !Array.isArray(rawData);
-                                    const search = localidadSearch.toLowerCase();
-                                    const MAX_SELECTION = 10;
-
-                                    const renderCheckbox = (loc: string) => (
-                                        <label key={loc} className="flex items-center space-x-2 cursor-pointer hover:bg-white p-1 rounded transition">
-                                            <input
-                                                type="checkbox"
-                                                checked={localidades.includes(loc)}
-                                                onChange={() => handleLocalidadToggle(loc)}
-                                                className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                                            />
-                                            <span className="text-sm text-gray-700">{loc}</span>
-                                        </label>
-                                    );
-
-                                    if (isZoned) {
-                                        // Render Zones
-                                        return (
-                                            <div className="space-y-2">
-                                                {/* Selected Chips Section */}
-                                                {localidades.length > 0 && (
-                                                    <div className="flex flex-wrap gap-2 mb-4 p-2 bg-blue-50 rounded-lg border border-blue-100">
-                                                        {localidades.map(loc => (
-                                                            <span key={loc} className="flex items-center gap-1 px-2 py-1 bg-white text-blue-700 text-xs font-bold rounded-full border border-blue-200 shadow-sm">
-                                                                {loc}
-                                                                <button
-                                                                    onClick={() => handleLocalidadToggle(loc)}
-                                                                    className="hover:text-red-500 transition"
-                                                                >
-                                                                    &times;
-                                                                </button>
-                                                            </span>
-                                                        ))}
-                                                        <button
-                                                            onClick={() => setLocalidades([])}
-                                                            className="text-[10px] text-blue-400 hover:text-blue-600 underline ml-auto"
-                                                        >
-                                                            Limpiar todo
-                                                        </button>
-                                                    </div>
-                                                )}
-
-                                                {Object.entries(rawData as Record<string, string[]>).map(([zoneName, locs]) => {
-                                                    const filteredLocs = locs.filter(l => l.toLowerCase().includes(search));
-                                                    if (filteredLocs.length === 0) return null;
-
-                                                    const isExpanded = expandedZones.includes(zoneName) || search.length > 0;
-                                                    const allZoneSelected = filteredLocs.every(loc => localidades.includes(loc));
-                                                    const someZoneSelected = filteredLocs.some(loc => localidades.includes(loc));
-
-                                                    const toggleZone = () => {
-                                                        setExpandedZones(prev =>
-                                                            prev.includes(zoneName) ? prev.filter(z => z !== zoneName) : [...prev, zoneName]
-                                                        );
-                                                    };
-
-                                                    const handleSelectAllZone = (e: React.MouseEvent) => {
-                                                        e.stopPropagation(); // Avoid toggling the zone
-                                                        if (allZoneSelected) {
-                                                            setLocalidades(prev => prev.filter(loc => !filteredLocs.includes(loc)));
-                                                        } else {
-                                                            const notSelected = filteredLocs.filter(loc => !localidades.includes(loc));
-                                                            const canAdd = Math.min(notSelected.length, MAX_SELECTION - localidades.length);
-                                                            if (canAdd < notSelected.length && canAdd === 0) {
-                                                                alert('Solo puedes seleccionar un máximo de 10 localidades');
-                                                            } else {
-                                                                setLocalidades(prev => [...prev, ...notSelected.slice(0, canAdd)]);
-                                                            }
-                                                        }
-                                                    };
-
-                                                    return (
-                                                        <div key={zoneName} className="border border-gray-100 rounded-lg overflow-hidden transition-all">
-                                                            <div
-                                                                onClick={toggleZone}
-                                                                className={`
-                                                                    flex items-center justify-between px-4 py-2 cursor-pointer transition
-                                                                    ${isExpanded ? 'bg-blue-50 border-b border-blue-100' : 'bg-white hover:bg-gray-50'}
-                                                                `}
-                                                            >
-                                                                <div className="flex items-center gap-3">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={allZoneSelected}
-                                                                        ref={input => {
-                                                                            if (input) input.indeterminate = someZoneSelected && !allZoneSelected;
-                                                                        }}
-                                                                        onClick={handleSelectAllZone}
-                                                                        onChange={() => { }} // Controlled by onClick
-                                                                        className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                                                                    />
-                                                                    <h4 className="font-bold text-blue-900 text-xs uppercase tracking-tight">
-                                                                        {zoneName}
-                                                                    </h4>
-                                                                    <span className="text-[10px] text-gray-400">({filteredLocs.length})</span>
-                                                                </div>
-                                                                <span className={`text-blue-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
-                                                                    ▼
-                                                                </span>
-                                                            </div>
-                                                            {isExpanded && (
-                                                                <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2 bg-white animate-fade-in">
-                                                                    {filteredLocs.map(renderCheckbox)}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        );
-                                    } else {
-                                        // Render Flat List
-                                        const filteredLocs = (rawData as string[]).filter(l => l.toLowerCase().includes(search));
-                                        if (filteredLocs.length === 0) return <p className="text-xs text-center text-gray-400 py-4">No se encontraron localidades.</p>;
-
-                                        return (
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                {filteredLocs.map(renderCheckbox)}
-                                            </div>
-                                        );
+                                    if (isLoadingGeo.localities) {
+                                        return <p className="text-xs text-center text-gray-400 py-8">Cargando localidades...</p>;
                                     }
+
+                                    return (
+                                        <LocalidadSelector
+                                            localidadesPorZona={dynamicLocalidades}
+                                            localidades={localidades}
+                                            onToggle={handleLocalidadToggle}
+                                            onClearAll={() => setLocalidades([])}
+                                        />
+                                    );
                                 })()}
                             </div>
                             <p className="text-xs text-right text-gray-500 mt-1">
