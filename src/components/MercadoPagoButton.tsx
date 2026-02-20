@@ -45,6 +45,24 @@ export default function MercadoPagoButton({
     const handlePayment = async () => {
         setLoading(true);
         try {
+            // Persist purchase summary to rehydrate on return from Mercado Pago.
+            try {
+                localStorage.setItem(
+                    `pending_purchase_${searchId}`,
+                    JSON.stringify({
+                        email: clientEmail || '',
+                        whatsapp: clientPhone || '',
+                        quantity,
+                        amount,
+                        rubro,
+                        provincia,
+                        localidades
+                    })
+                );
+            } catch (storageError) {
+                console.warn('Could not persist purchase summary:', storageError);
+            }
+
             const response = await fetch('/api/checkout', {
                 method: 'POST',
                 headers: {

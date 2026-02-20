@@ -25,6 +25,16 @@ interface Lead {
     isWhatsappValid: boolean;
 }
 
+interface PurchaseSummary {
+    email: string;
+    whatsapp: string;
+    quantity: number;
+    amount: number;
+    rubro: string;
+    provincia: string;
+    localidades: string[];
+}
+
 // Payment Modal Component
 function PaymentModal({
     totalAvailable,
@@ -455,6 +465,7 @@ function LeadsApp() {
     const [showPayment, setShowPayment] = useState(false);
     const [showSampleModal, setShowSampleModal] = useState(false);
     const [showLocsModal, setShowLocsModal] = useState(false);
+    const [purchaseSummary, setPurchaseSummary] = useState<PurchaseSummary | null>(null);
 
     // Search-specific states
     const [searchId, setSearchId] = useState<string | null>(null);
@@ -541,6 +552,16 @@ function LeadsApp() {
 
         if (urlSearchId) {
             setSearchId(urlSearchId);
+
+            const purchaseSummaryRaw = localStorage.getItem(`pending_purchase_${urlSearchId}`);
+            if (purchaseSummaryRaw) {
+                try {
+                    const parsed = JSON.parse(purchaseSummaryRaw) as PurchaseSummary;
+                    setPurchaseSummary(parsed);
+                } catch (parseError) {
+                    console.error('Could not parse pending purchase summary:', parseError);
+                }
+            }
 
             if (paymentStatus === 'success') {
                 setIsProcessing(true);
@@ -782,8 +803,18 @@ function LeadsApp() {
         return '⌛ INICIANDO SCRAPER...';
     };
 
+    const getDeliveryChannelMessage = (summary: PurchaseSummary) => {
+        const hasEmail = Boolean(summary.email);
+        const hasWhatsapp = Boolean(summary.whatsapp);
+        if (hasEmail && hasWhatsapp) return 'Pronto enviaremos todos los datos a tu Email y WhatsApp.';
+        if (hasEmail) return 'Pronto enviaremos todos los datos a tu Email.';
+        if (hasWhatsapp) return 'Pronto enviaremos todos los datos a tu WhatsApp.';
+        return 'Pronto enviaremos todos los datos por el canal que registraste.';
+    };
+
     // 4. Reset/Cancel Search Logic
     const handleResetSearch = () => {
+        const currentSearchId = searchId;
         setIsInitialSearch(false);
         setIsLoading(false);
         setIsProcessing(false);
@@ -796,6 +827,7 @@ function LeadsApp() {
         setSearchCoords({});
         setPollCount(0);
         setCurrentLocIndex(0);
+        setPurchaseSummary(null);
 
         // Limpieza de campos de formulario
         setRubro('');
@@ -803,6 +835,9 @@ function LeadsApp() {
         setLocalidades([]);
 
         localStorage.removeItem('active_search');
+        if (currentSearchId) {
+            localStorage.removeItem(`pending_purchase_${currentSearchId}`);
+        }
 
         // Clear URL
         const params = new URLSearchParams(searchParams.toString());
@@ -1143,6 +1178,33 @@ function LeadsApp() {
                                     Cancelar Búsqueda
                                 </button>
                             </div>
+
+                            {purchaseSummary && (
+                                <div className="bg-white border border-blue-100 rounded-2xl p-5 md:p-6 shadow-sm">
+                                    <h4 className="text-blue-900 font-black text-sm md:text-base uppercase tracking-wide mb-3">
+                                        Resumen de tu compra
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-700">
+                                        <p><span className="font-bold">Rubro:</span> {purchaseSummary.rubro || rubro}</p>
+                                        <p><span className="font-bold">Provincia:</span> {purchaseSummary.provincia || provincia}</p>
+                                        <p><span className="font-bold">Cantidad:</span> {purchaseSummary.quantity} contactos</p>
+                                        <p><span className="font-bold">Total pagado:</span> $ {purchaseSummary.amount.toLocaleString('es-AR')}</p>
+                                        <p className="md:col-span-2">
+                                            <span className="font-bold">Localidades:</span>{' '}
+                                            {(purchaseSummary.localidades?.length ? purchaseSummary.localidades : localidades).join(', ')}
+                                        </p>
+                                        {purchaseSummary.email && (
+                                            <p className="md:col-span-2"><span className="font-bold">Email:</span> {purchaseSummary.email}</p>
+                                        )}
+                                        {purchaseSummary.whatsapp && (
+                                            <p className="md:col-span-2"><span className="font-bold">WhatsApp:</span> {purchaseSummary.whatsapp}</p>
+                                        )}
+                                    </div>
+                                    <p className="mt-4 text-blue-700 font-semibold text-sm">
+                                        {getDeliveryChannelMessage(purchaseSummary)}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 
