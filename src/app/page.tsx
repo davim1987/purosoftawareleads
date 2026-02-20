@@ -843,14 +843,13 @@ function LeadsApp() {
                         {/* Provincia */}
                         <div className="flex flex-col">
                             <div className="input-base group border-gray-200">
-                                <span className="pl-6 pr-3 font-black text-gray-900 text-sm whitespace-nowrap">Provincia:</span>
                                 <select
                                     id="provincia"
                                     value={provincia}
                                     onChange={handleProvinciaChange}
-                                    className="input-field cursor-pointer font-black"
+                                    className="input-field cursor-pointer font-black w-full pl-6"
                                 >
-                                    <option value="">Seleccione...</option>
+                                    <option value="">Provincia</option>
                                     {PROVINCIAS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                                 </select>
                             </div>
@@ -1017,7 +1016,7 @@ function LeadsApp() {
                                 onClick={() => handleSearch()}
                                 disabled={isLoading || isInitialSearch}
                                 className={`
-                                    w-full md:w-auto px-10 py-4 rounded-full text-white font-black text-xl shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3
+                                    w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-lg shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap
                                     ${(isLoading || isInitialSearch) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}
                                 `}
                             >
@@ -1027,11 +1026,11 @@ function LeadsApp() {
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
-                                        Buscando negocios...
+                                        Buscando leads...
                                     </>
                                 ) : (
                                     <>
-                                        <FaSearch /> BUSCAR NEGOCIOS
+                                        <FaSearch /> BUSCAR LEADS
                                     </>
                                 )}
                             </button>
