@@ -3,15 +3,45 @@ import axios from 'axios';
 import https from 'https';
 import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
 
-// Agent to allow self-signed certificates for the bot
+type CsvValue = string | null;
+type CsvRow = Record<string, CsvValue>;
+
+interface SearchLead {
+    id: string;
+    nombre: string;
+    whatsapp: string | null;
+    web: string | null;
+    email: string | null;
+    direccion: string;
+    localidad: string;
+    rubro: string;
+    instagram: string | null;
+    facebook: string | null;
+    horario: string | null;
+}
+
+interface SearchTrackingRow {
+    id: string;
+    status: string;
+    rubro: string;
+    localidad: string | null;
+    bot_job_id: string | null;
+    total_leads?: number | null;
+    results?: SearchLead[] | null;
+    error_message?: string | null;
+}
+
+const allowInsecureBotTLS = process.env.BOT_ALLOW_INSECURE_TLS === 'true';
+
+// Keep strict TLS by default; allow self-signed certs only when explicitly enabled.
 export const httpsAgent = new https.Agent({
-    rejectUnauthorized: false
+    rejectUnauthorized: !allowInsecureBotTLS
 });
 
 const botBaseUrl = process.env.NEXT_PUBLIC_BOT_API_URL || 'https://gmaps-simple-scraper.puro.software';
 
 // Helper for CSV Parsing
-export function parseCSV(csvText: string) {
+export function parseCSV(csvText: string): CsvRow[] {
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
     if (lines.length < 2) return [];
 
@@ -42,7 +72,7 @@ export function parseCSV(csvText: string) {
 
     return lines.slice(1).map((line: string) => {
         const values = splitCSVLine(line);
-        const obj: any = {};
+        const obj: CsvRow = {};
         headers.forEach((header: string, i: number) => {
             if (header) obj[header] = values[i] || null;
         });
@@ -103,25 +133,34 @@ export async function getGeolocation(localidad: string, provincia: string) {
         if (cached) return { lat: cached.latitud || cached.lat, lon: cached.longitud || cached.lon };
 
         console.log(`Geolocating ${localidad}, ${provincia} via Nominatim...`);
-        const query = encodeURIComponent(`${localidad}, ${provincia}, Argentina`);
-        const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`, {
-            headers: { 'User-Agent': 'PurosoftwareBot/1.0' }
-        });
+        const provinceFallback = provincia.toLowerCase().includes('gba') ? 'Buenos Aires' : provincia;
+        const queries = [
+            `${localidad}, ${provincia}, Argentina`,
+            `${localidad}, ${provinceFallback}, Argentina`,
+            `${localidad}, Argentina`
+        ];
 
-        if (response.data && response.data.length > 0) {
-            const result = response.data[0];
-            const lat = parseFloat(result.lat);
-            const lon = parseFloat(result.lon);
-
-            await supabase.from('geolocalizacion').insert({
-                localidad,
-                provincia,
-                latitud: lat,
-                longitud: lon,
-                partido: result.display_name
+        for (const rawQuery of queries) {
+            const query = encodeURIComponent(rawQuery);
+            const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`, {
+                headers: { 'User-Agent': 'PurosoftwareBot/1.0' }
             });
 
-            return { lat, lon };
+            if (response.data && response.data.length > 0) {
+                const result = response.data[0];
+                const lat = parseFloat(result.lat);
+                const lon = parseFloat(result.lon);
+
+                await supabase.from('geolocalizacion').insert({
+                    localidad,
+                    provincia,
+                    latitud: lat,
+                    longitud: lon,
+                    partido: result.display_name
+                });
+
+                return { lat, lon };
+            }
         }
         return null;
     } catch (error) {
@@ -136,12 +175,13 @@ export async function getGeolocation(localidad: string, provincia: string) {
  */
 export async function checkBotAndUpdateStatus(searchId: string) {
     try {
-        const { data: tracking, error: fetchError } = await supabase
+        const { data: trackingData, error: fetchError } = await supabase
             .from('search_tracking')
             .select('*')
             .eq('id', searchId)
             .single();
 
+        const tracking = trackingData as SearchTrackingRow | null;
         if (fetchError || !tracking) return null;
 
         // Skip if already completed or error
@@ -153,7 +193,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
         const validLocs = tracking.localidad ? tracking.localidad.split(',').map((l: string) => l.trim()) : [];
         const rubro = tracking.rubro;
 
-        const aggregatedLeads: any[] = [];
+        const aggregatedLeads: SearchLead[] = [];
         let completedCount = 0;
         let anyRunning = false;
 
@@ -174,15 +214,15 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                     const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}/download`, { httpsAgent });
                     const partLeads = parseCSV(csvResponse.data);
 
-                    partLeads.forEach(l => {
+                    partLeads.forEach((l) => {
                         let mail = l.extended_emails || l.email || l['email address'] || l.emails;
-                        if (!mail && l.emails) mail = typeof l.emails === 'string' ? l.emails.split(',')[0] : (l.emails[0] || 'No disponible');
+                        if (!mail && l.emails) mail = l.emails.split(',')[0] || 'No disponible';
 
-                        const leadObj = {
+                        const leadObj: SearchLead = {
                             id: l.place_id || l.id || l.cid || `lead-${Math.random().toString(36).substring(7)}`,
                             nombre: l.title || l.name || l['business name'] || 'Nombre Reservado',
-                            whatsapp: l.phone || l.whatsapp || l['phone number'] || l.phone_number,
-                            web: l.website || l.web || l['website url'] || l.url,
+                            whatsapp: l.phone || l.whatsapp || l['phone number'] || l.phone_number || null,
+                            web: l.website || l.web || l['website url'] || l.url || null,
                             email: mail || 'No disponible',
                             direccion: l.address || l.complete_address || l['full address'] || l.formatted_address || 'No disponible',
                             localidad: l.city || l.sublocality || currentLoc,
@@ -223,7 +263,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
         if (!anyRunning && completedCount === botJobIds.length) {
             // Finalize
             if (aggregatedLeads.length > 0) {
-                const getScore = (l: any) => {
+                const getScore = (l: SearchLead) => {
                     let s = 0;
                     if (l.email && l.email !== 'No disponible') s += 10;
                     if (l.whatsapp) s += 10;

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
-import { FaSearch, FaWhatsapp, FaInstagram, FaFacebook, FaLinkedin, FaGlobe, FaEnvelope, FaMapMarkerAlt, FaClock, FaCheck, FaExclamationTriangle, FaDownload } from 'react-icons/fa';
+import { FaSearch, FaWhatsapp, FaInstagram, FaFacebook, FaEnvelope, FaMapMarkerAlt, FaCheck, FaExclamationTriangle } from 'react-icons/fa';
 import { BiCheckShield } from 'react-icons/bi';
 import MercadoPagoButton from '@/components/MercadoPagoButton';
 import LocalidadSelector from '@/components/LocalidadSelector';
@@ -295,6 +295,67 @@ const sampleLeads: Lead[] = [
     }
 ];
 
+function normalizeLocalidad(value: string | null | undefined) {
+    return (value || '').trim().toLowerCase();
+}
+
+function buildDiversePreview(leads: Lead[], selectedLocalidades: string[], limit = 5): Lead[] {
+    if (leads.length <= limit) return leads;
+
+    const buckets = new Map<string, Lead[]>();
+    leads.forEach((lead) => {
+        const key = normalizeLocalidad(lead.localidad) || '__sin_localidad__';
+        const current = buckets.get(key);
+        if (current) {
+            current.push(lead);
+        } else {
+            buckets.set(key, [lead]);
+        }
+    });
+
+    const preferredKeys: string[] = [];
+    selectedLocalidades.forEach((loc) => {
+        const key = normalizeLocalidad(loc);
+        if (key && !preferredKeys.includes(key)) preferredKeys.push(key);
+    });
+
+    const allKeys = [
+        ...preferredKeys,
+        ...Array.from(buckets.keys()).filter((key) => !preferredKeys.includes(key))
+    ];
+
+    const selected: Lead[] = [];
+    const selectedIds = new Set<string>();
+
+    let hasMore = true;
+    while (selected.length < limit && hasMore) {
+        hasMore = false;
+        for (const key of allKeys) {
+            const bucket = buckets.get(key);
+            if (!bucket || bucket.length === 0) continue;
+            const nextLead = bucket.shift();
+            if (!nextLead) continue;
+            hasMore = true;
+            if (!selectedIds.has(nextLead.id)) {
+                selected.push(nextLead);
+                selectedIds.add(nextLead.id);
+            }
+            if (selected.length >= limit) break;
+        }
+    }
+
+    if (selected.length < limit) {
+        for (const lead of leads) {
+            if (selected.length >= limit) break;
+            if (selectedIds.has(lead.id)) continue;
+            selected.push(lead);
+            selectedIds.add(lead.id);
+        }
+    }
+
+    return selected;
+}
+
 function SampleResultsModal({ onClose }: { onClose: () => void }) {
     React.useEffect(() => {
         const handleEsc = (event: KeyboardEvent) => {
@@ -392,7 +453,6 @@ function LeadsApp() {
     const [count, setCount] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [showPayment, setShowPayment] = useState(false);
-    const [customerEmail, setCustomerEmail] = useState('');
     const [showSampleModal, setShowSampleModal] = useState(false);
     const [showLocsModal, setShowLocsModal] = useState(false);
 
@@ -405,17 +465,11 @@ function LeadsApp() {
     const [currentLocIndex, setCurrentLocIndex] = useState(0);
     const [displayProgress, setDisplayProgress] = useState(0);
     const [searchCoords, setSearchCoords] = useState<Record<string, { lat: number, lon: number }>>({});
-    const [isPremiumWait, setIsPremiumWait] = useState(false);
-
-    // Purchase states
-    const [purchaseEmail, setPurchaseEmail] = useState('');
-    const [purchaseWhatsapp, setPurchaseWhatsapp] = useState('');
-    const [purchaseQuantity, setPurchaseQuantity] = useState(1);
-    const [emailError, setEmailError] = useState('');
 
     const searchParams = useSearchParams();
     const router = useRouter();
     const hasVerifiedPayment = React.useRef(false);
+    const progressSectionRef = React.useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const loadProvincias = async () => {
@@ -572,11 +626,17 @@ function LeadsApp() {
                         if (polledResults && polledResults.length > 0) {
                             setResults(polledResults);
                             setCount(polledCount || 0);
-                            setPurchaseQuantity(polledCount > 0 ? polledCount : 1);
                             setSearchStatus('completed');
                         } else {
-                            // Fallback to DB if no results
-                            handleSearch(true);
+                            // Fallback to DB if no results in tracking row
+                            const fallbackResponse = await axios.post('/api/search', {
+                                rubro,
+                                provincia,
+                                localidades
+                            });
+                            setResults(fallbackResponse.data.leads || []);
+                            setCount(fallbackResponse.data.count || 0);
+                            setSearchStatus('completed');
                         }
                     } else if (status === 'error') {
                         setIsInitialSearch(false);
@@ -599,7 +659,7 @@ function LeadsApp() {
             if (ticker) clearInterval(ticker);
             if (progressInterval) clearInterval(progressInterval);
         };
-    }, [isInitialSearch, searchId, localidades.length, searchParams, rubro, router]);
+    }, [isInitialSearch, searchId, localidades, searchParams, rubro, provincia, router]);
 
     // 3. Post-Payment Polling (Polling for full results)
     React.useEffect(() => {
@@ -676,7 +736,21 @@ function LeadsApp() {
         return () => {
             if (timer) clearInterval(timer);
         };
-    }, [isProcessing, rubro, provincia, localidades, pollCount]);
+    }, [isProcessing, searchId, rubro, provincia, localidades, pollCount]);
+
+    useEffect(() => {
+        const shouldShowProgress = (isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle';
+        if (!shouldShowProgress) return;
+
+        const timeoutId = setTimeout(() => {
+            progressSectionRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        }, 120);
+
+        return () => clearTimeout(timeoutId);
+    }, [isLoading, isInitialSearch, isProcessing, searchStatus]);
 
     const calculateProgress = (status: string) => {
         if (status === 'completed' || status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 100;
@@ -700,6 +774,14 @@ function LeadsApp() {
         return 0;
     };
 
+    const getSearchStatusLabel = (status: string) => {
+        if (status === 'completed') return '✅ ¡BÚSQUEDA FINALIZADA!';
+        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return '✅ ¡LEADS ENVIADOS!';
+        if (status === 'error') return '❌ ERROR EN EL PROCESO';
+        if (status.includes('Geolocalizando') || status === 'geolocating') return '⚙️ GEOLOCALIZANDO...';
+        return '⌛ INICIANDO SCRAPER...';
+    };
+
     // 4. Reset/Cancel Search Logic
     const handleResetSearch = () => {
         setIsInitialSearch(false);
@@ -714,17 +796,11 @@ function LeadsApp() {
         setSearchCoords({});
         setPollCount(0);
         setCurrentLocIndex(0);
-        setIsPremiumWait(false);
 
         // Limpieza de campos de formulario
         setRubro('');
         setProvincia('');
         setLocalidades([]);
-
-        // Limpieza de datos de contacto
-        setPurchaseEmail('');
-        setPurchaseWhatsapp('');
-        setEmailError('');
 
         localStorage.removeItem('active_search');
 
@@ -764,6 +840,9 @@ function LeadsApp() {
         }
 
         setIsLoading(true);
+        setSearchStatus('geolocating');
+        setDisplayProgress(prev => (prev > 5 ? prev : 5));
+        setCurrentLocIndex(0);
         setError(null);
         if (!fromPolling) {
             // Limpieza inmediata y explícita para evitar "datos fantasma"
@@ -772,10 +851,12 @@ function LeadsApp() {
             setSearchId(null);
             setSearchStatus('idle');
             setDisplayProgress(0);
-
-            // También ejecutamos la lógica de reset general
-            handleResetSearch();
-            setIsLoading(true);
+            setIsInitialSearch(false);
+            setIsProcessing(false);
+            setPollCount(0);
+            setCurrentLocIndex(0);
+            setSearchCoords({});
+            localStorage.removeItem('active_search');
         }
 
         try {
@@ -816,10 +897,6 @@ function LeadsApp() {
             setCount(response.data.count || 0);
             setSearchStatus('completed');
 
-            // Set quantity to max available
-            const totalAvailable = response.data.count || 0;
-            setPurchaseQuantity(totalAvailable > 0 ? totalAvailable : 1);
-
             if (response.data.count === 0) {
                 setError('No encontramos resultados for esta búsqueda.');
             } else if (fromPolling) {
@@ -828,9 +905,10 @@ function LeadsApp() {
                 setIsInitialSearch(false);
                 console.log('Search finished successfully after polling.');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.response?.data?.error || 'Error al buscar. Intente nuevamente.');
+            const apiError = axios.isAxiosError(err) ? err.response?.data?.error : null;
+            setError(typeof apiError === 'string' ? apiError : 'Error al buscar. Intente nuevamente.');
             setSearchStatus('error');
         } finally {
             // Only stop loading if NOT waiting for initial search background process
@@ -838,20 +916,6 @@ function LeadsApp() {
                 setIsLoading(false);
             }
         }
-    };
-
-    // This will be called when the user starts the payment process
-    const handlePayInitiated = () => {
-        setIsProcessing(true);
-        setPollCount(0);
-        setError('Estamos procesando tus resultados... Esto puede demorar unos minutos.');
-    };
-
-    const verifyPayment = async () => {
-        // This would be the actual MercadoPago redirection logic
-        // For demo purposes, we'll simulate a success
-        alert('Para pagar usa el formulario de abaja, este modal es legacy.');
-        setShowPayment(false);
     };
 
     return (
@@ -981,9 +1045,9 @@ function LeadsApp() {
 
                     {/* Progress Bar & Status */}
                     {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
-                        <div className="mt-8 space-y-6">
+                        <div ref={progressSectionRef} className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
-                                <div className={`${(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
+                            <div className={`${(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
                                     {(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? (
                                         <div className="flex flex-col items-center w-full max-w-lg">
                                             {/* Immersive Animation Container */}
@@ -994,7 +1058,9 @@ function LeadsApp() {
                                                     <div className="relative z-20 flex flex-col items-center px-4 transition-all duration-500">
                                                         <FaMapMarkerAlt className="text-4xl text-blue-600 mb-2 drop-shadow-sm" />
                                                         <span className="text-[11px] font-black text-blue-900 uppercase tracking-tighter text-center leading-tight break-words max-w-[100px] h-8 flex items-center justify-center">
-                                                            {localidades[currentLocIndex] || (searchStatus.includes('Geolocalizando') ? 'Localizando...' : 'Buscando...')}
+                                                            {localidades.length > 0
+                                                                ? localidades[currentLocIndex % localidades.length]
+                                                                : (searchStatus.includes('Geolocalizando') ? 'Localizando...' : 'Buscando...')}
                                                         </span>
                                                     </div>
                                                     {/* Scan Line effect */}
@@ -1011,11 +1077,13 @@ function LeadsApp() {
                                                     <div
                                                         key={idx}
                                                         className="absolute animate-contact-fly flex items-center justify-center"
-                                                        style={{
-                                                            '--tw-translate-x': item.tx,
-                                                            '--tw-translate-y': item.ty,
-                                                            animationDelay: item.delay
-                                                        } as any}
+                                                        style={
+                                                            {
+                                                                '--tw-translate-x': item.tx,
+                                                                '--tw-translate-y': item.ty,
+                                                                animationDelay: item.delay
+                                                            } as React.CSSProperties & Record<'--tw-translate-x' | '--tw-translate-y', string>
+                                                        }
                                                     >
                                                         <div className="p-3 bg-white rounded-full shadow-lg border border-gray-100">
                                                             <item.Icon className={`text-2xl ${item.color}`} />
@@ -1037,7 +1105,9 @@ function LeadsApp() {
                                                         <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-ping"></span>
                                                         {(searchStatus.includes('Geolocalizando') || searchStatus === 'geolocating')
                                                             ? 'PROCESANDO COORDENADAS'
-                                                            : `ESCANEANDO EN ${localidades[currentLocIndex]?.toUpperCase() || 'PROGRESO'}`
+                                                            : `ESCANEANDO EN ${(localidades.length > 0
+                                                                ? localidades[currentLocIndex % localidades.length]
+                                                                : 'PROGRESO').toUpperCase()}`
                                                         }
                                                     </p>
                                                 </div>
@@ -1045,10 +1115,7 @@ function LeadsApp() {
                                         </div>
                                     ) : (
                                         <span className="text-lg font-bold text-blue-900 animate-pulse text-center px-4">
-                                            {(searchStatus as any) === 'completed' ? '✅ ¡BÚSQUEDA FINALIZADA!' :
-                                                ((searchStatus as any) === 'completed_deep' || (searchStatus as string).toLowerCase().includes('enviados')) ? '✅ ¡LEADS ENVIADOS!' :
-                                                    (searchStatus as any) === 'error' ? '❌ ERROR EN EL PROCESO' :
-                                                        ((searchStatus as string).includes('Geolocalizando') || (searchStatus as any) === 'geolocating') ? '⚙️ GEOLOCALIZANDO...' : '⌛ INICIANDO SCRAPER...'}
+                                            {getSearchStatusLabel(searchStatus)}
                                         </span>
                                     )}
                                 </div>
@@ -1098,10 +1165,9 @@ function LeadsApp() {
 
                 {/* Context for sorting */}
                 {(() => {
-                    // Helper to count potential data points
-                    // The API already returns the top 3 leads sorted by quality
-                    const top3 = results;
-                    const totalAvailable = count || 0;
+                    const previewLeads = buildDiversePreview(results, localidades, 5);
+                    const totalAvailable = count || results.length;
+                    const remaining = Math.max(totalAvailable - previewLeads.length, 0);
 
                     return (
                         <>
@@ -1146,16 +1212,20 @@ function LeadsApp() {
                                     <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 mb-8">
                                         <div className="overflow-x-auto">
                                             <table className="min-w-full divide-y divide-gray-200">
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rubro</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Localidad</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instagram</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facebook</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
+                                                <thead className="bg-white">
+                                                    <tr>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rubro</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Localidad</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instagram</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facebook</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
+                                                    </tr>
+                                                </thead>
                                                 <tbody className="bg-white divide-y divide-gray-200">
-                                                    {top3.map((lead) => (
+                                                    {previewLeads.map((lead) => (
                                                         <tr key={lead.id} className="hover:bg-gray-50 transition">
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                                                                 <div className="flex flex-col">
@@ -1210,9 +1280,15 @@ function LeadsApp() {
                                             </table>
                                         </div>
                                         <div className="bg-gray-50 px-6 py-3 text-center border-t border-gray-200">
-                                            <p className="text-sm text-gray-500 italic">
-                                                ... y {totalAvailable - 3} resultados más esperando por ti.
-                                            </p>
+                                            {remaining > 0 ? (
+                                                <p className="text-sm text-gray-500 italic">
+                                                    ... y {remaining} resultados más esperando por ti.
+                                                </p>
+                                            ) : (
+                                                <p className="text-sm text-gray-500 italic">
+                                                    Estos son todos los resultados encontrados.
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
 

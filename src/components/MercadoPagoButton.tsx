@@ -4,7 +4,12 @@ import { initMercadoPago } from '@mercadopago/sdk-react';
 import { useState } from 'react';
 
 // Initialize Mercado Pago with Public Key
-initMercadoPago(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY!);
+const publicKey = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY;
+if (publicKey) {
+    initMercadoPago(publicKey);
+} else {
+    console.warn('Missing NEXT_PUBLIC_MP_PUBLIC_KEY. Mercado Pago checkout will be unavailable.');
+}
 
 interface MercadoPagoButtonProps {
     amount: number;

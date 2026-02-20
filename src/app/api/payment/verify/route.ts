@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 
-const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! });
+const getMercadoPagoClient = () => {
+    const token = process.env.MP_ACCESS_TOKEN;
+    if (!token) return null;
+    return new MercadoPagoConfig({ accessToken: token });
+};
 
 export async function POST(req: NextRequest) {
     try {
@@ -16,6 +20,11 @@ export async function POST(req: NextRequest) {
 
         if (!process.env.MP_ACCESS_TOKEN) {
             console.error('[Payment Fallback] CRITICAL: MP_ACCESS_TOKEN is missing');
+            return NextResponse.json({ error: 'Configuration error' }, { status: 500 });
+        }
+
+        const client = getMercadoPagoClient();
+        if (!client) {
             return NextResponse.json({ error: 'Configuration error' }, { status: 500 });
         }
 

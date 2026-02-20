@@ -4,8 +4,41 @@ import axios from 'axios';
 import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
 import { getGeolocation, httpsAgent, extractSocialHandle } from '@/lib/search-utils';
 
+type RawDbRow = Record<string, unknown>;
+
+interface SearchRequestBody {
+    rubro?: string;
+    provincia?: string;
+    localidades?: string[];
+}
+
+interface LeadResponse {
+    id: string;
+    nombre: string;
+    rubro: string;
+    direccion: string;
+    localidad: string;
+    provincia: string;
+    email: string | null;
+    whatsapp: string | null;
+    web: string | null;
+    instagram: string | null;
+    facebook: string | null;
+    horario: string | null;
+}
+
 // Simple in-memory fallback for rate limiting if DB fails
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+const readString = (row: RawDbRow, ...keys: string[]): string | null => {
+    for (const key of keys) {
+        const value = row[key];
+        if (typeof value === 'string' && value.trim() !== '') {
+            return value;
+        }
+    }
+    return null;
+};
 
 async function checkRateLimit(ip: string): Promise<boolean> {
     const ONE_DAY = 24 * 60 * 60 * 1000;
@@ -21,7 +54,7 @@ async function checkRateLimit(ip: string): Promise<boolean> {
 
         await supabase.from('search_logs').insert({ ip });
         return true;
-    } catch (error) {
+    } catch {
         const entry = rateLimitMap.get(ip);
         const now = Date.now();
         if (entry && now < entry.resetTime) {
@@ -37,7 +70,7 @@ async function checkRateLimit(ip: string): Promise<boolean> {
 export async function POST(req: NextRequest) {
     try {
         const ip = req.headers.get('x-forwarded-for') || 'unknown-ip';
-        const body = await req.json();
+        const body = (await req.json()) as SearchRequestBody;
         const { rubro, provincia, localidades } = body;
 
         if (!rubro || !localidades || !Array.isArray(localidades) || localidades.length === 0) {
@@ -47,7 +80,7 @@ export async function POST(req: NextRequest) {
         const allowed = await checkRateLimit(ip);
         if (!allowed) return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
 
-        let leads: any[] = [];
+        let leads: RawDbRow[] = [];
         let totalCountFromDB = 0;
 
         // Step A: Search DB (Check if we have results for ALL combined)
@@ -70,7 +103,7 @@ export async function POST(req: NextRequest) {
             }
 
             if (dbLeads && dbLeads.length > 0) {
-                leads = dbLeads;
+                leads = dbLeads as RawDbRow[];
                 totalCountFromDB = dbLeads.length;
             }
         } catch (dbErr) {
@@ -85,15 +118,13 @@ export async function POST(req: NextRequest) {
             try {
                 // 1. Parallel Geolocation for ALL localities
                 console.log(`[Parallel Search] Geolocating ${localidades.length} localities...`);
-                const coordsResults = await Promise.all(
-                    localidades.map(loc => getGeolocation(loc, provincia))
-                );
+                const coordsResults = await Promise.all(localidades.map((loc) => getGeolocation(loc, provincia || '')));
 
                 const validLocs = localidades.filter((_, idx) => coordsResults[idx] !== null);
-                const validCoords = coordsResults.filter(c => c !== null);
+                const validCoords = coordsResults.filter((c): c is { lat: number; lon: number } => c !== null);
 
                 // Create a mapping of locality name -> coordinates for the webhook
-                const validCoordsMap: Record<string, { lat: number, lon: number }> = {};
+                const validCoordsMap: Record<string, { lat: number; lon: number }> = {};
                 validLocs.forEach((loc, idx) => {
                     validCoordsMap[loc] = validCoords[idx];
                 });
@@ -116,7 +147,7 @@ export async function POST(req: NextRequest) {
                     const payload = {
                         name: `P-${searchId.substring(0, 4)}-${validLocs[idx].substring(0, 5)}`,
                         keywords: [rubro],
-                        lang: "es",
+                        lang: 'es',
                         zoom: 14,
                         lat: coords.lat.toString(),
                         lon: coords.lon.toString(),
@@ -129,7 +160,13 @@ export async function POST(req: NextRequest) {
                 });
 
                 const jobResponses = await Promise.all(jobRequests);
-                const actualJobIds = jobResponses.map(r => r.data.id || r.data.ID || r.data.job_id).filter(Boolean);
+                const actualJobIds = jobResponses
+                    .map((response) => {
+                        const data = response.data as Record<string, unknown>;
+                        const id = data.id ?? data.ID ?? data.job_id;
+                        return typeof id === 'string' || typeof id === 'number' ? String(id) : null;
+                    })
+                    .filter((id): id is string => Boolean(id));
                 const botJobIdString = actualJobIds.join(', ');
 
                 console.log(`[Parallel Search] Stored bot job IDs: ${botJobIdString}. Polling will happen in /api/search/status`);
@@ -140,58 +177,58 @@ export async function POST(req: NextRequest) {
                 }).eq('id', searchId);
 
                 return NextResponse.json({ status: 'processing', searchId, coords: validCoordsMap });
-            } catch (pErr: any) {
+            } catch (pErr: unknown) {
                 console.error('Parallel initiation error:', pErr);
-                return NextResponse.json({ error: pErr.message }, { status: 500 });
+                const message = pErr instanceof Error ? pErr.message : 'Error launching parallel search';
+                return NextResponse.json({ error: message }, { status: 500 });
             }
         }
 
         // Case: Leads found in DB
-        const getQualityScore = (l: any) => {
-            let s = 0;
-            if (l.Email || l.email) s += 10;
-            if (l.Whatssap || l.whatsapp) s += 10;
-            if (l.instagram) s += 5;
-            return s;
+        const getQualityScore = (lead: RawDbRow) => {
+            let score = 0;
+            if (readString(lead, 'Email', 'email')) score += 10;
+            if (readString(lead, 'Whatssap', 'whatsapp')) score += 10;
+            if (readString(lead, 'instagram')) score += 5;
+            return score;
         };
         leads.sort((a, b) => getQualityScore(b) - getQualityScore(a));
 
-        const mappedLeads = leads.map(l => {
-            const m: any = {
-                id: l.id || `p-${Math.random()}`,
-                nombre: l.Nombre || l.nombre || 'Nombre Reservado',
-                rubro: l.Rubro || l.rubro || rubro,
-                direccion: l.Direccion || l.direccion || 'No disponible',
-                localidad: l.Localidad || l.localidad || '',
-                provincia: l.Provincia || l.provincia || provincia,
-                email: l.Email || l.email || null,
-                whatsapp: l.Whatssap || l.whatsapp || null,
-                web: l.Web || l.web || null,
-                instagram: l.instagram || null,
-                facebook: l.Facebook || null,
-                horario: l.Horario || l.horario || l.opening_hours || null
+        const mappedLeads: LeadResponse[] = leads.map((lead) => {
+            const mapped: LeadResponse = {
+                id: readString(lead, 'id') || `p-${Math.random()}`,
+                nombre: readString(lead, 'Nombre', 'nombre') || 'Nombre Reservado',
+                rubro: readString(lead, 'Rubro', 'rubro') || rubro,
+                direccion: readString(lead, 'Direccion', 'direccion') || 'No disponible',
+                localidad: readString(lead, 'Localidad', 'localidad') || '',
+                provincia: readString(lead, 'Provincia', 'provincia') || (provincia || ''),
+                email: readString(lead, 'Email', 'email'),
+                whatsapp: readString(lead, 'Whatssap', 'whatsapp'),
+                web: readString(lead, 'Web', 'web'),
+                instagram: readString(lead, 'instagram'),
+                facebook: readString(lead, 'Facebook'),
+                horario: readString(lead, 'Horario', 'horario', 'opening_hours')
             };
 
             // Enhance socials for DB leads if missing
-            if (!m.instagram) m.instagram = extractSocialHandle(m.web, 'instagram');
-            if (!m.facebook) m.facebook = extractSocialHandle(m.web, 'facebook');
+            if (!mapped.instagram) mapped.instagram = extractSocialHandle(mapped.web, 'instagram');
+            if (!mapped.facebook) mapped.facebook = extractSocialHandle(mapped.web, 'facebook');
 
-            return m;
+            return mapped;
         });
 
         const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
         if (isFullRequest) return NextResponse.json({ count: totalCountFromDB, leads: mappedLeads });
 
-        const maskedLeads = mappedLeads.slice(0, 5).map(l => ({
-            ...l,
-            email: maskEmail(l.email || ''),
-            whatsapp: maskPhone(l.whatsapp || ''),
-            instagram: maskSocial(l.instagram || ''),
-            facebook: maskSocial(l.facebook || '')
+        const maskedLeads = mappedLeads.slice(0, 5).map((lead) => ({
+            ...lead,
+            email: maskEmail(lead.email || ''),
+            whatsapp: maskPhone(lead.whatsapp || ''),
+            instagram: maskSocial(lead.instagram || ''),
+            facebook: maskSocial(lead.facebook || '')
         }));
 
         return NextResponse.json({ count: totalCountFromDB, leads: maskedLeads });
-
     } catch (error) {
         console.error('Search API error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

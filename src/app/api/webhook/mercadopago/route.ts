@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 
-const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! });
+const getMercadoPagoClient = () => {
+    const token = process.env.MP_ACCESS_TOKEN;
+    if (!token) return null;
+    return new MercadoPagoConfig({ accessToken: token });
+};
 
 export async function POST(req: NextRequest) {
     try {
@@ -13,9 +17,14 @@ export async function POST(req: NextRequest) {
 
         if (!process.env.MP_ACCESS_TOKEN) {
             console.error('[MP Webhook] CRITICAL: MP_ACCESS_TOKEN is missing in environment variables');
+            return NextResponse.json({ status: 'ignored_missing_config' }, { status: 200 });
         }
 
         if (type === 'payment') {
+            const client = getMercadoPagoClient();
+            if (!client) {
+                return NextResponse.json({ status: 'ignored_missing_config' }, { status: 200 });
+            }
             const payment = new Payment(client);
             let paymentData;
 

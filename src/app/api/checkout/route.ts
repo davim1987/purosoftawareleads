@@ -1,10 +1,19 @@
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { NextRequest, NextResponse } from 'next/server';
 
-const client = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN! });
+const getMercadoPagoClient = () => {
+    const token = process.env.MP_ACCESS_TOKEN;
+    if (!token) return null;
+    return new MercadoPagoConfig({ accessToken: token });
+};
 
 export async function POST(req: NextRequest) {
     try {
+        const client = getMercadoPagoClient();
+        if (!client) {
+            return NextResponse.json({ error: 'Missing MP_ACCESS_TOKEN' }, { status: 500 });
+        }
+
         const body = await req.json();
         const { searchId, amount, clientPhone, clientEmail, quantity = 1, rubro, provincia, localidades, coords } = body;
 

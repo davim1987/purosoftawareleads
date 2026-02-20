@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { FaSearch, FaMapMarkerAlt, FaTimes, FaCheck, FaLayerGroup } from 'react-icons/fa';
+import { FaSearch, FaTimes, FaCheck, FaLayerGroup } from 'react-icons/fa';
 
 interface LocalidadSelectorProps {
     localidadesPorZona: Record<string, string[]>;
@@ -195,6 +195,14 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
                                     {localidades.length} <span className="text-gray-300">/ 10</span>
                                 </p>
                             </div>
+                            {onClearAll && localidades.length > 0 && (
+                                <button
+                                    onClick={onClearAll}
+                                    className="px-4 py-4 bg-gray-100 text-gray-600 font-black rounded-2xl active:scale-95 transition-transform"
+                                >
+                                    LIMPIAR
+                                </button>
+                            )}
                             <button
                                 onClick={() => setSelectedZone(null)}
                                 className="px-10 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 active:scale-95 transition-transform"

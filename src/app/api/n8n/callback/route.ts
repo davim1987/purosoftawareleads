@@ -3,10 +3,16 @@ import { supabase } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
     try {
+        const expectedApiKey = process.env.N8N_CALLBACK_API_KEY;
         const apiKey = req.headers.get('x-api-key');
 
+        if (!expectedApiKey) {
+            console.error('[n8n Callback] Missing N8N_CALLBACK_API_KEY env variable');
+            return NextResponse.json({ error: 'Configuration error' }, { status: 500 });
+        }
+
         // Security check
-        if (apiKey !== 'puro-secret-2026') {
+        if (apiKey !== expectedApiKey) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
