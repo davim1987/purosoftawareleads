@@ -1192,8 +1192,14 @@ function LeadsApp() {
                                             <div>
                                                 <h4 className="text-white font-black text-2xl">¡Encontramos {count} clientes!</h4>
                                                 <div className="flex items-center gap-2 mt-1">
-                                                    <span className="text-[10px] bg-white/20 text-blue-50 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Búsqueda Exitosa</span>
-                                                    <span className="text-[10px] bg-orange-400 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">1 contacto x $100</span>
+                                                    <span className="text-[9px] bg-white/20 text-blue-50 px-3 py-1.5 rounded-2xl font-bold uppercase tracking-wider flex flex-col items-center justify-center text-center leading-tight">
+                                                        <span>Búsqueda</span>
+                                                        <span>Exitosa</span>
+                                                    </span>
+                                                    <span className="text-[9px] bg-orange-400 text-white px-3 py-1.5 rounded-2xl font-bold uppercase tracking-wider flex flex-col items-center justify-center text-center leading-tight">
+                                                        <span>1 contacto</span>
+                                                        <span>x $100</span>
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
