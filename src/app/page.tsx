@@ -813,8 +813,8 @@ function LeadsApp() {
 
                 {/* Header */}
                 <div className="text-center">
-                    <h1 className="text-4xl font-extrabold text-blue-900 sm:text-5xl md:text-6xl flex items-center justify-center gap-3">
-                        <BiCheckShield className="text-blue-500" /> Purosoftware Leads B2B
+                    <h1 className="text-4xl font-extrabold text-blue-900 sm:text-5xl md:text-6xl">
+                        Purosoftware Leads B2B
                     </h1>
                     <p className="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
                         Potencia tu negocio con nuestra base de datos verificada y actualizada.
