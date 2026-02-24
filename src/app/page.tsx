@@ -53,8 +53,25 @@ function PaymentModal({
     localidades: string[],
     coords?: Record<string, { lat: number, lon: number }>
 }) {
-    const [email, setEmail] = useState('');
-    const [whatsapp, setWhatsapp] = useState('');
+    const CONTACT_CACHE_KEY = 'checkout_contact_cache_v1';
+    const getCachedContact = () => {
+        if (typeof window === 'undefined') return { email: '', whatsapp: '' };
+        try {
+            const cached = localStorage.getItem(CONTACT_CACHE_KEY);
+            if (!cached) return { email: '', whatsapp: '' };
+            const parsed = JSON.parse(cached) as { email?: string; whatsapp?: string };
+            return {
+                email: parsed.email || '',
+                whatsapp: parsed.whatsapp || ''
+            };
+        } catch {
+            return { email: '', whatsapp: '' };
+        }
+    };
+
+    const cachedContact = getCachedContact();
+    const [email, setEmail] = useState(cachedContact.email);
+    const [whatsapp, setWhatsapp] = useState(cachedContact.whatsapp);
     const [quantity, setQuantity] = useState<number | string>(totalAvailable);
     const [emailError, setEmailError] = useState('');
 
@@ -64,6 +81,22 @@ function PaymentModal({
 
     const isEmailValid = email && !emailError;
     const isWhatsappValid = whatsapp.length === 10;
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(
+                CONTACT_CACHE_KEY,
+                JSON.stringify({
+                    email,
+                    whatsapp
+                })
+            );
+        } catch (err) {
+            console.error('Could not write contact cache:', err);
+        }
+    }, [email, whatsapp]);
+    const isQuantityValid = numericQuantity > 0;
+    const canProceedToPay = (isEmailValid || isWhatsappValid) && isQuantityValid;
 
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-fade-in">
@@ -129,6 +162,8 @@ function PaymentModal({
                             <label className="block text-sm font-bold text-gray-700 mb-1.5">2. Tu Email</label>
                             <input
                                 type="email"
+                                name="checkout_email"
+                                autoComplete="email"
                                 placeholder="ejemplo@empresa.com"
                                 value={email}
                                 onChange={(e) => {
@@ -152,6 +187,8 @@ function PaymentModal({
                                 <span className="absolute left-4 top-3 text-xl" title="Argentina">🇦🇷</span>
                                 <input
                                     type="tel"
+                                    name="checkout_phone"
+                                    autoComplete="tel"
                                     placeholder="11 1234-5678"
                                     value={whatsapp}
                                     onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, ''))}
@@ -186,8 +223,8 @@ function PaymentModal({
                             provincia={provincia}
                             localidades={localidades}
                             coords={coords}
-                            disabled={!(isEmailValid || isWhatsappValid)}
-                            className={`w-full py-4.5 rounded-2xl font-black text-xl shadow-2xl transition-all flex justify-center items-center gap-3 text-white transform active:scale-95 ${isEmailValid || isWhatsappValid
+                            disabled={!canProceedToPay}
+                            className={`w-full py-4.5 rounded-2xl font-black text-xl shadow-2xl transition-all flex justify-center items-center gap-3 text-white transform active:scale-95 ${canProceedToPay
                                 ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:shadow-blue-500/40 hover:-translate-y-1'
                                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                                 }`}
@@ -695,7 +732,7 @@ function LeadsApp() {
         };
     }, [isInitialSearch, searchId, localidades, searchParams, rubro, provincia, router]);
 
-    // 3. Post-Payment Polling (Polling for full results)
+    // 3. Post-Payment Polling (Only status until n8n callback confirms completion)
     React.useEffect(() => {
         let timer: NodeJS.Timeout;
 
@@ -707,7 +744,7 @@ function LeadsApp() {
                     return;
                 }
 
-                console.log('Polling for full results and status...', { searchId, rubro });
+                console.log('Polling status after payment...', { searchId, rubro });
                 try {
                     // 1. Check Status first to see if n8n notified us
                     if (searchId) {
@@ -723,43 +760,37 @@ function LeadsApp() {
                         }
 
                         if (currentStatus === 'completed_deep' || currentStatus?.toLowerCase().includes('enviados')) {
-                            // If notified by n8n, we still want to try to get the leads one last time
+                            const effectiveRubro = rubro || sRubro;
+                            const effectiveLocalidades = (localidades && localidades.length > 0) ? localidades : (sLocs || []);
+
+                            // Wait for metadata rehydration before fetching full leads.
+                            if (!effectiveRubro || !effectiveLocalidades || effectiveLocalidades.length === 0) {
+                                return;
+                            }
+
+                            // Only now fetch full results from DB.
                             const response = await axios.post(`/api/search?full=true`, {
-                                rubro, provincia, localidades
+                                rubro: effectiveRubro,
+                                provincia,
+                                localidades: effectiveLocalidades
                             });
                             const leads = response.data.leads || [];
                             setResults(leads);
                             setIsProcessing(false);
                             setIsLoading(false);
+                            setError(null);
                             clearInterval(timer);
                             return;
                         }
                     }
 
-                    // 2. Regular full data check
-                    const response = await axios.post(`/api/search?full=true`, {
-                        rubro,
-                        provincia,
-                        localidades
-                    });
-
-                    const leads = response.data.leads || [];
-                    const hasFullData = leads.some((l: Lead) => l.email || l.whatsapp || l.telefono2);
-
-                    if (hasFullData) {
-                        setResults(leads);
+                    // No full-data polling here: wait for explicit n8n callback status.
+                    setPollCount(prev => prev + 1);
+                    if (pollCount > 100) { // Extended timeout for deep search
                         setIsProcessing(false);
                         setIsLoading(false);
-                        setError(null);
+                        setError('El procesamiento está tardando. Te avisaremos por WhatsApp apenas terminen de enviarse.');
                         clearInterval(timer);
-                    } else {
-                        setPollCount(prev => prev + 1);
-                        if (pollCount > 100) { // Extended timeout for deep search
-                            setIsProcessing(false);
-                            setIsLoading(false);
-                            setError('El procesamiento está tardando. Te avisaremos por WhatsApp apenas terminen de enviarse.');
-                            clearInterval(timer);
-                        }
                     }
                 } catch (err) {
                     console.error('Polling error:', err);

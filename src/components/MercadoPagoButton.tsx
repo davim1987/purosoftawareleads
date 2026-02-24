@@ -83,15 +83,21 @@ export default function MercadoPagoButton({
 
             const data = await response.json();
 
+            if (!response.ok) {
+                const message = typeof data?.error === 'string' ? data.error : 'Error en checkout';
+                throw new Error(message);
+            }
+
             if (data.init_point) {
                 window.location.href = data.init_point;
             } else {
-                console.error('No init_point returned from API');
+                throw new Error(typeof data?.error === 'string' ? data.error : 'No init_point returned from API');
             }
 
         } catch (error) {
             console.error('Error initiating checkout:', error);
-            alert('Error al iniciar el pago. Por favor revisa la consola o intenta nuevamente.');
+            const message = error instanceof Error ? error.message : 'Error al iniciar el pago';
+            alert(`Error al iniciar el pago: ${message}`);
         } finally {
             setLoading(false);
         }

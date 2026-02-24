@@ -49,6 +49,16 @@ interface DeliverResult {
     deliveredCount?: number;
 }
 
+function normalizeText(value: string | null | undefined) {
+    return (value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function toArrayOfStrings(value: unknown): string[] {
     if (!value) return [];
     if (Array.isArray(value)) {
@@ -224,24 +234,74 @@ export async function deliverOrderBySearchId(searchId: string): Promise<DeliverR
     await setDeliveryState(searchId, 'processing', { delivery_started_at: new Date().toISOString() });
 
     const localidades = toArrayOfStrings(order.localidades);
-    let leadsQuery = supabase
-        .from('leads_google_maps')
-        .select('*')
-        .ilike('rubro', `%${order.rubro}%`);
+    const searchLimit = Math.max(order.quantity_paid * 30, 500);
 
-    if (localidades.length > 0) {
-        leadsQuery = leadsQuery.in('localidad', localidades);
+    let leadsData: LeadRow[] = [];
+    let leadsError: unknown = null;
+
+    // 1) Primary attempt: rubro (lowercase column)
+    {
+        const result = await supabase
+            .from('leads_google_maps')
+            .select('*')
+            .ilike('rubro', `%${order.rubro}%`)
+            .limit(searchLimit);
+        leadsData = (result.data || []) as LeadRow[];
+        leadsError = result.error;
     }
 
-    const { data: leadsData, error: leadsError } = await leadsQuery.limit(Math.max(order.quantity_paid * 5, 50));
+    // 2) Fallback: rubro (capitalized column)
+    if (!leadsError && leadsData.length === 0) {
+        const result = await supabase
+            .from('leads_google_maps')
+            .select('*')
+            .ilike('Rubro', `%${order.rubro}%`)
+            .limit(searchLimit);
+        leadsData = (result.data || []) as LeadRow[];
+        leadsError = result.error;
+    }
+
+    // 3) Last resort: fetch broad sample and filter in code
+    if (!leadsError && leadsData.length === 0) {
+        const result = await supabase
+            .from('leads_google_maps')
+            .select('*')
+            .limit(searchLimit);
+        leadsData = (result.data || []) as LeadRow[];
+        leadsError = result.error;
+    }
 
     if (leadsError || !leadsData || leadsData.length === 0) {
         await setDeliveryState(searchId, 'failed', { delivery_error: 'No leads found for order criteria' });
         return { ok: false, message: 'No leads found for order criteria' };
     }
 
+    const normalizedRubro = normalizeText(order.rubro);
+    const normalizedLocalidades = localidades.map(normalizeText).filter(Boolean);
+
+    const filteredLeads = leadsData.filter((lead) => {
+        const leadRubro = normalizeText(readString(lead, 'Rubro', 'rubro'));
+        const rubroMatch =
+            !normalizedRubro ||
+            leadRubro.includes(normalizedRubro) ||
+            normalizedRubro.includes(leadRubro);
+
+        if (!rubroMatch) return false;
+        if (normalizedLocalidades.length === 0) return true;
+
+        const leadLocalidad = normalizeText(readString(lead, 'Localidad', 'localidad'));
+        return normalizedLocalidades.some((loc) =>
+            leadLocalidad === loc || leadLocalidad.includes(loc) || loc.includes(leadLocalidad)
+        );
+    });
+
+    if (filteredLeads.length === 0) {
+        await setDeliveryState(searchId, 'failed', { delivery_error: 'No leads found for order criteria' });
+        return { ok: false, message: 'No leads found for order criteria' };
+    }
+
     const uniqueMap = new Map<string, LeadRow>();
-    for (const lead of leadsData as LeadRow[]) {
+    for (const lead of filteredLeads) {
         const key = readString(lead, 'id') || `${readString(lead, 'Nombre', 'nombre')}|${readString(lead, 'Localidad', 'localidad')}`;
         if (!uniqueMap.has(key)) uniqueMap.set(key, lead);
     }
