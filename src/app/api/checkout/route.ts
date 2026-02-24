@@ -1,5 +1,6 @@
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { NextRequest, NextResponse } from 'next/server';
+import { upsertOrder } from '@/lib/orders';
 
 const getMercadoPagoClient = () => {
     const token = process.env.MP_ACCESS_TOKEN;
@@ -58,6 +59,24 @@ export async function POST(req: NextRequest) {
                     localidades: Array.isArray(localidades) ? localidades.join(', ') : localidades,
                     coords: coords ? JSON.stringify(coords) : null
                 }
+            }
+        });
+
+        await upsertOrder({
+            searchId: finalSearchId,
+            email: clientEmail || null,
+            phone: clientPhone || null,
+            rubro: rubro || null,
+            provincia: provincia || null,
+            localidades: Array.isArray(localidades) ? localidades : (localidades || null),
+            quantityPaid: qty,
+            amountPaid: totalAmount,
+            paymentStatus: 'pending',
+            deliveryStatus: 'pending',
+            source: 'checkout_api',
+            metadata: {
+                preference_id: result.id || null,
+                coords: coords || null
             }
         });
 

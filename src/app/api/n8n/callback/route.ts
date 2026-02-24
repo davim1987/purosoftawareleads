@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/db';
+import { upsertOrder } from '@/lib/orders';
+import { deliverOrderBySearchId } from '@/lib/order-delivery';
 
 export async function POST(req: NextRequest) {
     try {
@@ -39,6 +41,23 @@ export async function POST(req: NextRequest) {
             console.error('[n8n Callback] DB Update Error:', error);
             // Return 200 to n8n anyway to prevent unnecessary retries if the logic mostly worked
             return NextResponse.json({ error: 'Database update failed' }, { status: 200 });
+        }
+
+        await upsertOrder({
+            searchId,
+            deliveryStatus: status === 'failed' ? 'failed' : 'processing',
+            source: 'n8n_callback',
+            metadata: {
+                callback_status: status || 'completed_deep',
+                callback_message: message || null
+            }
+        });
+
+        if (status !== 'failed') {
+            const deliveryResult = await deliverOrderBySearchId(searchId);
+            if (!deliveryResult.ok) {
+                console.error('[n8n Callback] Delivery failed:', deliveryResult.message);
+            }
         }
 
         return NextResponse.json({

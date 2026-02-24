@@ -306,64 +306,76 @@ const sampleLeads: Lead[] = [
 ];
 
 function normalizeLocalidad(value: string | null | undefined) {
-    return (value || '').trim().toLowerCase();
+    return (value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 function buildDiversePreview(leads: Lead[], selectedLocalidades: string[], limit = 5): Lead[] {
     if (leads.length <= limit) return leads;
 
-    const buckets = new Map<string, Lead[]>();
-    leads.forEach((lead) => {
-        const key = normalizeLocalidad(lead.localidad) || '__sin_localidad__';
-        const current = buckets.get(key);
-        if (current) {
-            current.push(lead);
-        } else {
-            buckets.set(key, [lead]);
-        }
-    });
-
-    const preferredKeys: string[] = [];
-    selectedLocalidades.forEach((loc) => {
-        const key = normalizeLocalidad(loc);
-        if (key && !preferredKeys.includes(key)) preferredKeys.push(key);
-    });
-
-    const allKeys = [
-        ...preferredKeys,
-        ...Array.from(buckets.keys()).filter((key) => !preferredKeys.includes(key))
-    ];
-
-    const selected: Lead[] = [];
     const selectedIds = new Set<string>();
+    const preview: Lead[] = [];
+    const preferredKeys = Array.from(
+        new Set(
+            selectedLocalidades
+                .map((loc) => normalizeLocalidad(loc))
+                .filter(Boolean)
+        )
+    );
 
-    let hasMore = true;
-    while (selected.length < limit && hasMore) {
-        hasMore = false;
-        for (const key of allKeys) {
-            const bucket = buckets.get(key);
-            if (!bucket || bucket.length === 0) continue;
-            const nextLead = bucket.shift();
-            if (!nextLead) continue;
-            hasMore = true;
-            if (!selectedIds.has(nextLead.id)) {
-                selected.push(nextLead);
-                selectedIds.add(nextLead.id);
-            }
-            if (selected.length >= limit) break;
+    const localidadMatches = (leadLocalidad: string | null | undefined, key: string) => {
+        const leadKey = normalizeLocalidad(leadLocalidad);
+        if (!leadKey || !key) return false;
+        return leadKey === key || leadKey.includes(key) || key.includes(leadKey);
+    };
+
+    // First pass: one lead per selected locality (if available)
+    for (const key of preferredKeys) {
+        if (preview.length >= limit) break;
+        const candidate = leads.find(
+            (lead) => !selectedIds.has(lead.id) && localidadMatches(lead.localidad, key)
+        );
+        if (candidate) {
+            preview.push(candidate);
+            selectedIds.add(candidate.id);
         }
     }
 
-    if (selected.length < limit) {
+    // Second pass: keep filling with selected localities (second round, third round...)
+    if (preview.length < limit && preferredKeys.length > 0) {
+        let added = true;
+        while (preview.length < limit && added) {
+            added = false;
+            for (const key of preferredKeys) {
+                if (preview.length >= limit) break;
+                const candidate = leads.find(
+                    (lead) => !selectedIds.has(lead.id) && localidadMatches(lead.localidad, key)
+                );
+                if (candidate) {
+                    preview.push(candidate);
+                    selectedIds.add(candidate.id);
+                    added = true;
+                }
+            }
+        }
+    }
+
+    // Final fallback: complete with whatever remains
+    if (preview.length < limit) {
         for (const lead of leads) {
-            if (selected.length >= limit) break;
+            if (preview.length >= limit) break;
             if (selectedIds.has(lead.id)) continue;
-            selected.push(lead);
+            preview.push(lead);
             selectedIds.add(lead.id);
         }
     }
 
-    return selected;
+    return preview;
 }
 
 function SampleResultsModal({ onClose }: { onClose: () => void }) {
@@ -465,6 +477,7 @@ function LeadsApp() {
     const [showPayment, setShowPayment] = useState(false);
     const [showSampleModal, setShowSampleModal] = useState(false);
     const [showLocsModal, setShowLocsModal] = useState(false);
+    const [isLocalidadModalOpen, setIsLocalidadModalOpen] = useState(false);
     const [purchaseSummary, setPurchaseSummary] = useState<PurchaseSummary | null>(null);
 
     // Search-specific states
@@ -848,24 +861,25 @@ function LeadsApp() {
 
     const handleProvinciaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setProvincia(e.target.value);
-        setLocalidades([]); // Reset localities on province change
+        // Keep selected localities when switching province so users can combine areas.
+        if (e.target.value) {
+            setIsLocalidadModalOpen(true);
+        } else {
+            setIsLocalidadModalOpen(false);
+        }
     };
 
-    const handleLocalidadToggle = (loc: string) => {
-        setLocalidades(prev => {
-            if (prev.includes(loc)) {
-                // Remove if already selected
-                return prev.filter(l => l !== loc);
-            } else {
-                // Check if already at max
-                if (prev.length >= 10) {
-                    alert('Solo puedes seleccionar un máximo de 10 localidades');
-                    return prev;
-                }
-                // Add new selection
-                return [...prev, loc];
-            }
-        });
+    const handleRemoveLocalidad = (loc: string) => {
+        setLocalidades((prev) => prev.filter((item) => item !== loc));
+    };
+
+    const handleClearLocalidades = () => {
+        setLocalidades([]);
+    };
+
+    const handleLocalidadesSave = (selectedLocalidades: string[]) => {
+        setLocalidades(selectedLocalidades);
+        setIsLocalidadModalOpen(false);
     };
 
     const handleSearch = async (fromPolling = false) => {
@@ -1007,7 +1021,7 @@ function LeadsApp() {
                     {provincia && (
                         <div className="mt-6">
                             <label className="text-sm font-semibold text-gray-700 mb-2 block">
-                                Seleccioná las localidades (máximo 10)
+                                Seleccioná las localidades
                             </label>
 
                             <div className="max-h-64 overflow-y-auto p-2 border rounded-lg bg-gray-50">
@@ -1020,15 +1034,43 @@ function LeadsApp() {
                                         <LocalidadSelector
                                             localidadesPorZona={dynamicLocalidades}
                                             localidades={localidades}
-                                            onToggle={handleLocalidadToggle}
-                                            onClearAll={() => setLocalidades([])}
+                                            onSave={handleLocalidadesSave}
+                                            isOpen={isLocalidadModalOpen}
+                                            onOpenChange={setIsLocalidadModalOpen}
                                         />
                                     );
                                 })()}
                             </div>
                             <p className="text-xs text-right text-gray-500 mt-1">
-                                Seleccionados: {localidades.length} / 10
+                                Seleccionados: {localidades.length}
                             </p>
+                            {localidades.length > 0 && (
+                                <div className="mt-3 space-y-2">
+                                    <div className="flex justify-end">
+                                        <button
+                                            type="button"
+                                            onClick={handleClearLocalidades}
+                                            className="text-xs font-bold text-red-500 hover:text-red-700"
+                                        >
+                                            Quitar todas
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {localidades.map((loc) => (
+                                            <button
+                                                key={loc}
+                                                type="button"
+                                                onClick={() => handleRemoveLocalidad(loc)}
+                                                className="px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold inline-flex items-center gap-2 hover:bg-blue-100"
+                                                title={`Quitar ${loc}`}
+                                            >
+                                                <span>{loc}</span>
+                                                <span className="text-blue-600 font-black">×</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

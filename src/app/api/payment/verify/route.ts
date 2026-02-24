@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
+import { upsertOrder } from '@/lib/orders';
 
 const getMercadoPagoClient = () => {
     const token = process.env.MP_ACCESS_TOKEN;
@@ -40,10 +41,35 @@ export async function POST(req: NextRequest) {
         }
 
         if (paymentData.status === 'approved') {
+            const finalSearchId = searchId || paymentData.external_reference;
+
+            if (!finalSearchId) {
+                console.error('[Payment Fallback] Missing searchId/external_reference for approved payment');
+                return NextResponse.json({ error: 'Missing search reference' }, { status: 400 });
+            }
+
+            await upsertOrder({
+                searchId: finalSearchId,
+                email: paymentData.metadata?.client_email || null,
+                phone: paymentData.metadata?.client_phone || null,
+                rubro: paymentData.metadata?.rubro || null,
+                provincia: paymentData.metadata?.provincia || null,
+                localidades: paymentData.metadata?.localidades || null,
+                quantityPaid: Number(paymentData.metadata?.quantity || 1),
+                amountPaid: Number(paymentData.transaction_amount || 0),
+                paymentStatus: 'approved',
+                deliveryStatus: 'processing',
+                providerPaymentId: paymentData.id ? String(paymentData.id) : null,
+                source: 'payment_verify',
+                metadata: {
+                    mp_status: paymentData.status || null
+                }
+            });
+
             const payload = {
                 tipo: 'consulta_clientepago',
                 action: 'deep_scrape',
-                searchId: searchId || paymentData.external_reference,
+                searchId: finalSearchId,
                 phone: paymentData.metadata?.client_phone,
                 email: paymentData.metadata?.client_email,
                 payment_id: paymentData.id,
@@ -84,6 +110,19 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Webhook delivery failed' }, { status: 500 });
             }
         } else {
+            const fallbackSearchId = searchId || paymentData.external_reference;
+            if (fallbackSearchId) {
+                await upsertOrder({
+                    searchId: fallbackSearchId,
+                    paymentStatus: 'pending',
+                    deliveryStatus: 'pending',
+                    providerPaymentId: paymentData.id ? String(paymentData.id) : null,
+                    source: 'payment_verify',
+                    metadata: {
+                        mp_status: paymentData.status || null
+                    }
+                });
+            }
             return NextResponse.json({ status: 'not_approved', paymentStatus: paymentData.status });
         }
 
