@@ -614,7 +614,7 @@ function SampleResultsModal({ onClose }: { onClose: () => void }) {
 
 function LeadsApp() {
     const [rubro, setRubro] = useState('');
-    const [provincia, setProvincia] = useState('Buenos Aires');
+    const [provincia, setProvincia] = useState('Argentina');
     const [localidades, setLocalidades] = useState<string[]>([]);
     const [dynamicLocalidades, setDynamicLocalidades] = useState<Record<string, string[]>>({});
     const [isLoadingGeo, setIsLoadingGeo] = useState({ localities: false });
@@ -645,31 +645,38 @@ function LeadsApp() {
 
     useEffect(() => {
         const loadLocalidades = async () => {
-            if (!provincia) {
-                setDynamicLocalidades({});
-                return;
-            }
-
             setIsLoadingGeo(prev => ({ ...prev, localities: true }));
             try {
-                const [resBuenosAires, resGba] = await Promise.all([
-                    axios.get('/api/geo/localidades?provincia_id=1'),
-                    axios.get('/api/geo/localidades?provincia_id=2')
-                ]);
+                const provincesRes = await axios.get('/api/geo/provincias');
+                const provincias = (provincesRes.data || []) as Array<{ id: number; provincia: string }>;
 
-                const merged = [...resBuenosAires.data, ...resGba.data] as Array<{ localidad: string; zona?: string }>;
-                const uniqueLocalidades = Array.from(
-                    new Set(
-                        merged
-                            .map((item) => item.localidad)
-                            .filter((item): item is string => Boolean(item))
-                            .map((item) => normalizeLocalidadLabel(item))
-                            .filter((item): item is string => Boolean(item))
+                const localityResponses = await Promise.all(
+                    provincias.map((prov) =>
+                        axios.get(`/api/geo/localidades?provincia_id=${prov.id}`).then((res) => ({
+                            provincia: prov.provincia,
+                            rows: (res.data || []) as Array<{ localidad: string }>
+                        }))
                     )
-                ).sort((a, b) => a.localeCompare(b, 'es'));
+                );
 
-                // Keep API contract expected by LocalidadSelector (Record<string, string[]>)
-                setDynamicLocalidades({ 'Buenos Aires': uniqueLocalidades });
+                const groupedByProvincia: Record<string, string[]> = {};
+                localityResponses.forEach(({ provincia: provName, rows }) => {
+                    const normalizedList = Array.from(
+                        new Set(
+                            rows
+                                .map((item) => item.localidad)
+                                .filter((item): item is string => Boolean(item))
+                                .map((item) => normalizeLocalidadLabel(item))
+                                .filter((item): item is string => Boolean(item))
+                        )
+                    ).sort((a, b) => a.localeCompare(b, 'es'));
+
+                    if (normalizedList.length > 0) {
+                        groupedByProvincia[provName] = normalizedList;
+                    }
+                });
+
+                setDynamicLocalidades(groupedByProvincia);
             } catch (error) {
                 console.error('Error loading localities:', error);
             } finally {
@@ -677,7 +684,7 @@ function LeadsApp() {
             }
         };
         loadLocalidades();
-    }, [provincia]);
+    }, []);
 
     // 1. Rehydration: Load active search from localStorage or URL
     useEffect(() => {
@@ -693,7 +700,7 @@ function LeadsApp() {
             if (!urlSearchId || urlSearchId === id) {
                 if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
                     setRubro(sRubro);
-                    setProvincia('Buenos Aires');
+                    setProvincia('Argentina');
                     setLocalidades(sLocs);
                     if (!urlSearchId) setSearchId(id);
                 }
@@ -978,7 +985,7 @@ function LeadsApp() {
 
         // Limpieza de campos de formulario
         setRubro('');
-        setProvincia('Buenos Aires');
+        setProvincia('Argentina');
         setLocalidades([]);
 
         localStorage.removeItem('active_search');
@@ -991,11 +998,6 @@ function LeadsApp() {
         params.delete('searchId');
         params.delete('payment');
         router.replace(`/?${params.toString()}`);
-    };
-
-    const handleProvinciaClick = () => {
-        if (!provincia) setProvincia('Buenos Aires');
-        setIsLocalidadModalOpen(true);
     };
 
     const handleRemoveLocalidad = (loc: string) => {
@@ -1130,28 +1132,10 @@ function LeadsApp() {
                                 Escribí el tipo de negocio que querés buscar.
                             </p>
                         </div>
-
-                        {/* Provincia */}
-                        <div className="text-center">
-                            <label htmlFor="provincia" className="block text-sm font-black tracking-wide text-gray-700 uppercase mb-2">
-                                Provincia
-                            </label>
-                            <button
-                                id="provincia"
-                                type="button"
-                                onClick={handleProvinciaClick}
-                                className="w-full rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-center text-2xl font-black text-gray-900 outline-none transition hover:border-blue-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 cursor-pointer"
-                            >
-                                {provincia}
-                            </button>
-                            <p className="mt-2 text-xs font-medium text-gray-500">
-                                Hacé clic para abrir el selector de localidades.
-                            </p>
-                        </div>
                     </div>
 
                     {/* Localidades */}
-                    {provincia && (
+                    {Object.keys(dynamicLocalidades).length > 0 && (
                         <div className="mt-8 max-w-2xl mx-auto">
                             <label className="text-sm font-black tracking-wide text-gray-700 uppercase mb-2 block text-center">
                                 Seleccioná las localidades

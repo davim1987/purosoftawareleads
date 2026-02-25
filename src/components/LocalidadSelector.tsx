@@ -27,13 +27,8 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [draftLocalidades, setDraftLocalidades] = useState<string[]>(localidades);
 
-    const allLocalidades = useMemo(
-        () =>
-            Object.values(localidadesPorZona)
-                .flat()
-                .filter(Boolean),
-        [localidadesPorZona]
-    );
+    const provinceEntries = useMemo(() => Object.entries(localidadesPorZona), [localidadesPorZona]);
+    const allLocalidades = useMemo(() => provinceEntries.flatMap(([, locs]) => locs).filter(Boolean), [provinceEntries]);
     const totalAvailable = allLocalidades.length;
 
     const openModal = () => {
@@ -57,10 +52,16 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
     const draftSet = useMemo(() => new Set(draftLocalidades), [draftLocalidades]);
     const normalizedSearch = normalizeText(searchTerm);
 
-    const filteredLocalidades = useMemo(() => {
-        if (!normalizedSearch) return allLocalidades;
-        return allLocalidades.filter((loc) => normalizeText(loc).includes(normalizedSearch));
-    }, [allLocalidades, normalizedSearch]);
+    const filteredByProvince = useMemo(() => {
+        if (!normalizedSearch) return provinceEntries;
+
+        return provinceEntries
+            .map(([provinceName, locs]) => [
+                provinceName,
+                locs.filter((loc) => normalizeText(loc).includes(normalizedSearch))
+            ] as [string, string[]])
+            .filter(([, locs]) => locs.length > 0);
+    }, [provinceEntries, normalizedSearch]);
 
     const toggleLocalidad = (loc: string) => {
         setDraftLocalidades((prev) => (
@@ -109,31 +110,40 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
                                 />
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                {filteredLocalidades.map((loc) => {
-                                    const isSelected = draftSet.has(loc);
-                                    return (
-                                        <label
-                                            key={loc}
-                                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition ${
-                                                isSelected
-                                                    ? 'border-blue-300 bg-blue-50 text-blue-900'
-                                                    : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200'
-                                            }`}
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={isSelected}
-                                                onChange={() => toggleLocalidad(loc)}
-                                                className="h-4 w-4 cursor-pointer accent-blue-600"
-                                            />
-                                            <span className="text-sm">{loc}</span>
-                                        </label>
-                                    );
-                                })}
+                            <div className="space-y-4">
+                                {filteredByProvince.map(([provinceName, locs]) => (
+                                    <div key={provinceName} className="rounded-xl border border-gray-200 bg-gray-50/50 p-3">
+                                        <p className="text-xs font-black uppercase tracking-wide text-gray-600 mb-2">
+                                            {provinceName}
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                            {locs.map((loc) => {
+                                                const isSelected = draftSet.has(loc);
+                                                return (
+                                                    <label
+                                                        key={`${provinceName}-${loc}`}
+                                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition ${
+                                                            isSelected
+                                                                ? 'border-blue-300 bg-blue-50 text-blue-900'
+                                                                : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200'
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => toggleLocalidad(loc)}
+                                                            className="h-4 w-4 cursor-pointer accent-blue-600"
+                                                        />
+                                                        <span className="text-sm">{loc}</span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
 
-                            {filteredLocalidades.length === 0 && (
+                            {filteredByProvince.length === 0 && (
                                 <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
                                     No encontramos localidades con ese nombre.
                                 </div>
