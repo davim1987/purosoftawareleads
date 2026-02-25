@@ -49,6 +49,12 @@ interface DeliverResult {
     deliveredCount?: number;
 }
 
+interface ProviderSendResult {
+    ok: boolean;
+    provider: 'resend' | 'n8n_webhook';
+    error?: string;
+}
+
 function normalizeText(value: string | null | undefined) {
     return (value || '')
         .toLowerCase()
@@ -152,10 +158,12 @@ async function setDeliveryState(searchId: string, deliveryStatus: DeliveryStatus
     }
 }
 
-async function sendByResend(to: string, subject: string, html: string, filename: string, base64Content: string) {
+async function sendByResend(to: string, subject: string, html: string, filename: string, base64Content: string): Promise<ProviderSendResult> {
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.RESEND_FROM_EMAIL;
-    if (!apiKey || !from) return false;
+    if (!apiKey || !from) {
+        return { ok: false, provider: 'resend', error: 'Missing RESEND_API_KEY or RESEND_FROM_EMAIL' };
+    }
 
     const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -179,15 +187,18 @@ async function sendByResend(to: string, subject: string, html: string, filename:
 
     if (!response.ok) {
         const errorText = await response.text();
-        console.error('[Delivery] Resend error:', errorText);
-        return false;
+        const errorMessage = `HTTP ${response.status}: ${errorText}`;
+        console.error('[Delivery] Resend error:', errorMessage);
+        return { ok: false, provider: 'resend', error: errorMessage };
     }
-    return true;
+    return { ok: true, provider: 'resend' };
 }
 
-async function sendByN8nWebhook(payload: Record<string, unknown>) {
+async function sendByN8nWebhook(payload: Record<string, unknown>): Promise<ProviderSendResult> {
     const webhook = process.env.N8N_DELIVERY_WEBHOOK_URL;
-    if (!webhook) return false;
+    if (!webhook) {
+        return { ok: false, provider: 'n8n_webhook', error: 'Missing N8N_DELIVERY_WEBHOOK_URL' };
+    }
 
     const response = await fetch(webhook, {
         method: 'POST',
@@ -199,10 +210,11 @@ async function sendByN8nWebhook(payload: Record<string, unknown>) {
 
     if (!response.ok) {
         const errorText = await response.text();
-        console.error('[Delivery] n8n delivery webhook error:', errorText);
-        return false;
+        const errorMessage = `HTTP ${response.status}: ${errorText}`;
+        console.error('[Delivery] n8n delivery webhook error:', errorMessage);
+        return { ok: false, provider: 'n8n_webhook', error: errorMessage };
     }
-    return true;
+    return { ok: true, provider: 'n8n_webhook' };
 }
 
 export async function deliverOrderBySearchId(searchId: string): Promise<DeliverResult> {
@@ -279,14 +291,17 @@ export async function deliverOrderBySearchId(searchId: string): Promise<DeliverR
     const normalizedRubro = normalizeText(order.rubro);
     const normalizedLocalidades = localidades.map(normalizeText).filter(Boolean);
 
-    const filteredLeads = leadsData.filter((lead) => {
+    const rubroMatchedLeads = leadsData.filter((lead) => {
         const leadRubro = normalizeText(readString(lead, 'Rubro', 'rubro'));
         const rubroMatch =
             !normalizedRubro ||
             leadRubro.includes(normalizedRubro) ||
             normalizedRubro.includes(leadRubro);
 
-        if (!rubroMatch) return false;
+        return rubroMatch;
+    });
+
+    const filteredLeads = rubroMatchedLeads.filter((lead) => {
         if (normalizedLocalidades.length === 0) return true;
 
         const leadLocalidad = normalizeText(readString(lead, 'Localidad', 'localidad'));
@@ -295,13 +310,17 @@ export async function deliverOrderBySearchId(searchId: string): Promise<DeliverR
         );
     });
 
-    if (filteredLeads.length === 0) {
+    // If locality labels differ (e.g. order "Vicente Lopez" but lead locality "Olivos"),
+    // do not fail delivery when we still have valid rubro-matched leads.
+    const candidateLeads = filteredLeads.length > 0 ? filteredLeads : rubroMatchedLeads;
+
+    if (candidateLeads.length === 0) {
         await setDeliveryState(searchId, 'failed', { delivery_error: 'No leads found for order criteria' });
         return { ok: false, message: 'No leads found for order criteria' };
     }
 
     const uniqueMap = new Map<string, LeadRow>();
-    for (const lead of filteredLeads) {
+    for (const lead of candidateLeads) {
         const key = readString(lead, 'id') || `${readString(lead, 'Nombre', 'nombre')}|${readString(lead, 'Localidad', 'localidad')}`;
         if (!uniqueMap.has(key)) uniqueMap.set(key, lead);
     }
@@ -319,11 +338,11 @@ export async function deliverOrderBySearchId(searchId: string): Promise<DeliverR
         <p>Monto pagado: ${order.currency} ${order.amount_paid}</p>
     `;
 
-    const sentByResend = await sendByResend(order.email, subject, html, filename, base64Csv);
-    let sentByN8n = false;
+    const resendResult = await sendByResend(order.email, subject, html, filename, base64Csv);
+    let n8nResult: ProviderSendResult | null = null;
 
-    if (!sentByResend) {
-        sentByN8n = await sendByN8nWebhook({
+    if (!resendResult.ok) {
+        n8nResult = await sendByN8nWebhook({
             searchId,
             email: order.email,
             phone: order.phone,
@@ -337,15 +356,26 @@ export async function deliverOrderBySearchId(searchId: string): Promise<DeliverR
         });
     }
 
-    if (!sentByResend && !sentByN8n) {
-        await setDeliveryState(searchId, 'failed', { delivery_error: 'No email delivery provider configured or delivery failed' });
-        return { ok: false, message: 'Delivery failed: configure RESEND_* or N8N_DELIVERY_WEBHOOK_URL' };
+    if (!resendResult.ok && !n8nResult?.ok) {
+        const details = [
+            `resend: ${resendResult.error || 'unknown error'}`,
+            `n8n: ${n8nResult?.error || 'not attempted or unknown error'}`
+        ].join(' | ');
+
+        await setDeliveryState(searchId, 'failed', {
+            delivery_error: 'No email delivery provider configured or delivery failed',
+            delivery_provider_errors: details
+        });
+        return { ok: false, message: `Delivery failed: ${details}` };
     }
 
     await setDeliveryState(searchId, 'sent', {
-        delivery_provider: sentByResend ? 'resend' : 'n8n_webhook',
+        delivery_provider: resendResult.ok ? 'resend' : 'n8n_webhook',
         delivered_count: selectedLeads.length,
-        delivered_filename: filename
+        delivered_filename: filename,
+        locality_filter_mode: filteredLeads.length > 0 ? 'strict' : 'rubro_fallback',
+        resend_error: resendResult.ok ? null : resendResult.error || null,
+        n8n_delivery_error: n8nResult && !n8nResult.ok ? n8nResult.error || null : null
     });
 
     return { ok: true, message: 'Delivered successfully', deliveredCount: selectedLeads.length };
