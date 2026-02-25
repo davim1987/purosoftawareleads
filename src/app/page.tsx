@@ -424,9 +424,10 @@ function normalizeLocalidadLabel(localidad: string) {
 function DemoJourneyVideo() {
     const [frame, setFrame] = React.useState(0);
     const demoScrollRef = React.useRef<HTMLDivElement | null>(null);
-    const totalFrames = 100;
+    const totalFrames = 120;
     const rubroTexto = 'hamburgueseria';
-    const localidadSeleccionada = 'Olivos';
+    const localidadSeleccionadas = ['Olivos', 'San Isidro', 'Tigre'];
+    const searchInModal = 'tig';
 
     React.useEffect(() => {
         const interval = window.setInterval(() => {
@@ -435,28 +436,56 @@ function DemoJourneyVideo() {
         return () => window.clearInterval(interval);
     }, []);
 
-    const step = frame < 25 ? 0 : frame < 45 ? 1 : frame < 75 ? 2 : 3;
+    const step = frame < 26 ? 0 : frame < 72 ? 1 : frame < 102 ? 2 : 3;
     const typedLength = Math.min(
         rubroTexto.length,
-        Math.floor((Math.min(frame, 24) / 24) * rubroTexto.length)
+        Math.floor((Math.min(frame, 25) / 25) * rubroTexto.length)
     );
     const rubroTyped = rubroTexto.slice(0, typedLength);
-    const progress = step === 2 ? Math.min(100, Math.round(((frame - 45) / 30) * 100)) : step > 2 ? 100 : 0;
+    const progress = step === 2 ? Math.min(100, Math.round(((frame - 72) / 30) * 100)) : step > 2 ? 100 : 0;
+
+    const modalOpen = frame >= 34 && frame <= 68;
+    const modalTypedLength =
+        frame < 43 ? 0 : Math.min(searchInModal.length, Math.floor(((Math.min(frame, 51) - 43) / 8) * searchInModal.length));
+    const modalSearchText = searchInModal.slice(0, Math.max(0, modalTypedLength));
+    const showAllSelected = frame >= 56;
+    const showSavedSelection = frame >= 66;
+    const revealResults = frame >= 110;
+    const demoModalLocalidades = [
+        '25 de Mayo', '3 de febrero', 'A. Alsina',
+        'A. Gonzáles Cháves', 'Aguas Verdes', 'Alberti',
+        'Arrecifes', 'Ayacucho', 'Azul',
+        'Bahía Blanca', 'Balcarce', 'Baradero',
+        'Benito Juárez', 'Berisso', 'Bolívar'
+        , 'Tigre'
+    ];
+    const modalFilteredLocalidades = modalSearchText
+        ? demoModalLocalidades.filter((loc) => normalizeLocalidad(loc).includes(normalizeLocalidad(modalSearchText)))
+        : demoModalLocalidades;
 
     const cursorPosition =
         step === 0
-            ? { top: '21%', left: '28%' }
+            ? { top: '20%', left: '28%' }
             : step === 1
-                ? { top: '44%', left: '22%' }
+                ? modalOpen
+                    ? frame < 42
+                        ? { top: '34%', left: '29%' }
+                        : frame < 55
+                            ? { top: '46%', left: '35%' }
+                            : frame < 62
+                                ? { top: '44%', left: '70%' }
+                                : { top: '79%', left: '74%' }
+                    : { top: '45%', left: '36%' }
                 : step === 2
-                    ? { top: '60%', left: '48%' }
-                    : { top: '82%', left: '13%' };
+                    ? { top: '66%', left: '50%' }
+                    : { top: '90%', left: '13%' };
 
     const isClickMoment = (
-        (frame >= 10 && frame <= 13) ||
-        (frame >= 31 && frame <= 34) ||
-        (frame >= 53 && frame <= 56) ||
-        (frame >= 78 && frame <= 81)
+        (frame >= 2 && frame <= 5) ||
+        (frame >= 34 && frame <= 37) ||
+        (frame >= 55 && frame <= 58) ||
+        (frame >= 61 && frame <= 64) ||
+        (frame >= 72 && frame <= 75)
     );
 
     React.useEffect(() => {
@@ -478,7 +507,7 @@ function DemoJourneyVideo() {
         <div className="relative rounded-2xl border border-gray-200 bg-white p-4 md:p-6 overflow-hidden">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
                 <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>1. Completa rubro</div>
-                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>2. Elige localidad</div>
+                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>2. Abre y usa modal</div>
                 <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 2 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>3. Busca y procesa</div>
                 <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 3 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>4. Ve resultados</div>
             </div>
@@ -492,20 +521,24 @@ function DemoJourneyVideo() {
                     </p>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                    <p className="text-[11px] uppercase font-black tracking-wide text-gray-600 mb-1">Provincia</p>
-                    <p className="text-lg font-black text-gray-900">Buenos Aires</p>
-                </div>
-
                 <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                     <p className="text-[11px] uppercase font-black tracking-wide text-gray-600 mb-2">Localidades</p>
-                    <div className="flex flex-wrap gap-2">
-                        <span className={`px-3 py-1 rounded-full border text-xs font-black transition ${step >= 1 ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}>
-                            {localidadSeleccionada}
-                        </span>
-                        <span className="px-3 py-1 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-400">San Isidro</span>
-                        <span className="px-3 py-1 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-400">Tigre</span>
-                    </div>
+                    <button
+                        type="button"
+                        className="w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-black"
+                    >
+                        Seleccionar localidades ({showSavedSelection ? 3 : 0} de 142)
+                    </button>
+
+                    {showSavedSelection && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {localidadSeleccionadas.map((loc) => (
+                                <span key={loc} className="px-3 py-1 rounded-full border border-blue-300 bg-blue-100 text-blue-700 text-xs font-black">
+                                    {loc}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex justify-center">
@@ -525,21 +558,66 @@ function DemoJourneyVideo() {
                     <p className="text-right text-xs font-bold text-blue-700 mt-1">{progress}%</p>
                 </div>
 
-                <div className={`rounded-xl border border-gray-200 overflow-hidden transition ${step === 3 ? 'opacity-100' : 'opacity-40'}`}>
-                    <div className="grid grid-cols-3 bg-gray-100 px-3 py-2 text-[11px] font-black text-gray-600 uppercase tracking-wide">
-                        <span>Nombre</span>
-                        <span>Localidad</span>
-                        <span>Whatsapp</span>
-                    </div>
-                    {sampleLeads.slice(0, 3).map((lead) => (
-                        <div key={lead.id} className="grid grid-cols-3 px-3 py-2 text-xs border-t border-gray-100">
-                            <span className="font-bold text-gray-800 truncate pr-2">{lead.nombre}</span>
-                            <span className="text-gray-600">{lead.localidad}</span>
-                            <span className="text-blue-600 font-bold">{lead.whatsapp}</span>
+                {revealResults ? (
+                    <div className="rounded-xl border border-gray-200 overflow-hidden transition opacity-100">
+                        <div className="grid grid-cols-3 bg-gray-100 px-3 py-2 text-[11px] font-black text-gray-600 uppercase tracking-wide">
+                            <span>Nombre</span>
+                            <span>Localidad</span>
+                            <span>Whatsapp</span>
                         </div>
-                    ))}
-                </div>
+                        {sampleLeads.slice(0, 3).map((lead) => (
+                            <div key={lead.id} className="grid grid-cols-3 px-3 py-2 text-xs border-t border-gray-100">
+                                <span className="font-bold text-gray-800 truncate pr-2">{lead.nombre}</span>
+                                <span className="text-gray-600">{lead.localidad}</span>
+                                <span className="text-blue-600 font-bold">{lead.whatsapp}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-xs font-bold text-gray-400">
+                        Los resultados aparecerán al finalizar el scroll de búsqueda...
+                    </div>
+                )}
             </div>
+
+            {modalOpen && (
+                <div className="absolute inset-0 z-10 bg-black/30 flex items-center justify-center p-4">
+                    <div className="w-full max-w-5xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
+                        <div className="p-4 space-y-4">
+                            <div className="relative">
+                                <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <div className="rounded-xl border border-gray-200 pl-11 pr-3 py-2.5 text-[15px] text-gray-500">
+                                    Buscar localidad por nombre...
+                                    <span className="font-black text-gray-800 ml-1">{modalSearchText}</span>
+                                    {frame >= 43 && frame <= 51 && <span className="animate-pulse text-gray-800">|</span>}
+                                </div>
+                            </div>
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                <p className="text-sm font-black text-gray-700 mb-3 uppercase">Buenos Aires</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                    {modalFilteredLocalidades.slice(0, 12).map((loc) => {
+                                        const checked = showAllSelected || localidadSeleccionadas.includes(loc);
+                                        return (
+                                            <div key={loc} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700">
+                                                <span className={`h-5 w-5 rounded border inline-flex items-center justify-center text-[10px] ${checked ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-400 text-transparent'}`}>✓</span>
+                                                <span>{loc}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="px-4 py-3 border-t border-gray-100 flex justify-between items-center">
+                            <button type="button" className="px-4 py-2 rounded-lg border border-blue-200 text-blue-700 text-sm font-black">
+                                Seleccionar todas
+                            </button>
+                            <button type="button" className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-black">
+                                Guardar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div
                 className="pointer-events-none absolute z-20 transition-all duration-500"
