@@ -47,6 +47,13 @@ interface DeliverResult {
     ok: boolean;
     message: string;
     deliveredCount?: number;
+    dryRun?: boolean;
+    debug?: {
+        selectedCount: number;
+        filename: string;
+        localidades: string[];
+        filterMode: 'strict' | 'rubro_fallback';
+    };
 }
 
 interface ProviderSendResult {
@@ -217,7 +224,13 @@ async function sendByN8nWebhook(payload: Record<string, unknown>): Promise<Provi
     return { ok: true, provider: 'n8n_webhook' };
 }
 
-export async function deliverOrderBySearchId(searchId: string): Promise<DeliverResult> {
+interface DeliverOptions {
+    dryRun?: boolean;
+}
+
+export async function deliverOrderBySearchId(searchId: string, options: DeliverOptions = {}): Promise<DeliverResult> {
+    const dryRun = Boolean(options.dryRun);
+
     const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .select('*')
@@ -338,6 +351,30 @@ export async function deliverOrderBySearchId(searchId: string): Promise<DeliverR
         <p>Monto pagado: ${order.currency} ${order.amount_paid}</p>
     `;
 
+    const filterMode: 'strict' | 'rubro_fallback' = filteredLeads.length > 0 ? 'strict' : 'rubro_fallback';
+
+    if (dryRun) {
+        await setDeliveryState(searchId, 'processing', {
+            delivery_dry_run_at: new Date().toISOString(),
+            delivery_dry_run_count: selectedLeads.length,
+            delivery_dry_run_filename: filename,
+            locality_filter_mode: filterMode
+        });
+
+        return {
+            ok: true,
+            dryRun: true,
+            message: 'Dry run OK: leads found and CSV built',
+            deliveredCount: selectedLeads.length,
+            debug: {
+                selectedCount: selectedLeads.length,
+                filename,
+                localidades,
+                filterMode
+            }
+        };
+    }
+
     const resendResult = await sendByResend(order.email, subject, html, filename, base64Csv);
     let n8nResult: ProviderSendResult | null = null;
 
@@ -373,7 +410,7 @@ export async function deliverOrderBySearchId(searchId: string): Promise<DeliverR
         delivery_provider: resendResult.ok ? 'resend' : 'n8n_webhook',
         delivered_count: selectedLeads.length,
         delivered_filename: filename,
-        locality_filter_mode: filteredLeads.length > 0 ? 'strict' : 'rubro_fallback',
+        locality_filter_mode: filterMode,
         resend_error: resendResult.ok ? null : resendResult.error || null,
         n8n_delivery_error: n8nResult && !n8nResult.ok ? n8nResult.error || null : null
     });
