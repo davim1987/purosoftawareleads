@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
-import { FaSearch, FaWhatsapp, FaInstagram, FaFacebook, FaEnvelope, FaMapMarkerAlt, FaCheck, FaExclamationTriangle } from 'react-icons/fa';
+import { FaSearch, FaWhatsapp, FaInstagram, FaFacebook, FaEnvelope, FaMapMarkerAlt, FaCheck, FaExclamationTriangle, FaMousePointer } from 'react-icons/fa';
 import { BiCheckShield } from 'react-icons/bi';
 import MercadoPagoButton from '@/components/MercadoPagoButton';
 import LocalidadSelector from '@/components/LocalidadSelector';
@@ -415,6 +415,154 @@ function buildDiversePreview(leads: Lead[], selectedLocalidades: string[], limit
     return preview;
 }
 
+function normalizeLocalidadLabel(localidad: string) {
+    const trimmed = localidad.trim();
+    if (trimmed.toLowerCase() === 'el tala') return 'El Talar';
+    return trimmed;
+}
+
+function DemoJourneyVideo() {
+    const [frame, setFrame] = React.useState(0);
+    const demoScrollRef = React.useRef<HTMLDivElement | null>(null);
+    const totalFrames = 100;
+    const rubroTexto = 'hamburgueseria';
+    const localidadSeleccionada = 'Olivos';
+
+    React.useEffect(() => {
+        const interval = window.setInterval(() => {
+            setFrame((prev) => (prev + 1) % totalFrames);
+        }, 120);
+        return () => window.clearInterval(interval);
+    }, []);
+
+    const step = frame < 25 ? 0 : frame < 45 ? 1 : frame < 75 ? 2 : 3;
+    const typedLength = Math.min(
+        rubroTexto.length,
+        Math.floor((Math.min(frame, 24) / 24) * rubroTexto.length)
+    );
+    const rubroTyped = rubroTexto.slice(0, typedLength);
+    const progress = step === 2 ? Math.min(100, Math.round(((frame - 45) / 30) * 100)) : step > 2 ? 100 : 0;
+
+    const cursorPosition =
+        step === 0
+            ? { top: '21%', left: '28%' }
+            : step === 1
+                ? { top: '44%', left: '22%' }
+                : step === 2
+                    ? { top: '60%', left: '48%' }
+                    : { top: '82%', left: '13%' };
+
+    const isClickMoment = (
+        (frame >= 10 && frame <= 13) ||
+        (frame >= 31 && frame <= 34) ||
+        (frame >= 53 && frame <= 56) ||
+        (frame >= 78 && frame <= 81)
+    );
+
+    React.useEffect(() => {
+        const el = demoScrollRef.current;
+        if (!el) return;
+
+        if (step === 0) {
+            el.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+
+        if (step >= 2) {
+            const maxScroll = el.scrollHeight - el.clientHeight;
+            el.scrollTo({ top: maxScroll, behavior: 'smooth' });
+        }
+    }, [step, frame]);
+
+    return (
+        <div className="relative rounded-2xl border border-gray-200 bg-white p-4 md:p-6 overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
+                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>1. Completa rubro</div>
+                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>2. Elige localidad</div>
+                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 2 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>3. Busca y procesa</div>
+                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 3 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>4. Ve resultados</div>
+            </div>
+
+            <div ref={demoScrollRef} className="space-y-3 max-h-[430px] overflow-y-auto pr-1">
+                <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3">
+                    <p className="text-[11px] uppercase font-black tracking-wide text-gray-600 mb-1">Rubro</p>
+                    <p className="text-lg font-black text-gray-900 min-h-[28px]">
+                        {rubroTyped}
+                        {step === 0 && <span className="animate-pulse">|</span>}
+                    </p>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                    <p className="text-[11px] uppercase font-black tracking-wide text-gray-600 mb-1">Provincia</p>
+                    <p className="text-lg font-black text-gray-900">Buenos Aires</p>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                    <p className="text-[11px] uppercase font-black tracking-wide text-gray-600 mb-2">Localidades</p>
+                    <div className="flex flex-wrap gap-2">
+                        <span className={`px-3 py-1 rounded-full border text-xs font-black transition ${step >= 1 ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}>
+                            {localidadSeleccionada}
+                        </span>
+                        <span className="px-3 py-1 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-400">San Isidro</span>
+                        <span className="px-3 py-1 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-400">Tigre</span>
+                    </div>
+                </div>
+
+                <div className="flex justify-center">
+                    <button
+                        type="button"
+                        className={`px-8 py-3 rounded-full text-white font-black text-base transition ${step >= 2 ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gray-300'}`}
+                    >
+                        BUSCAR LEADS
+                    </button>
+                </div>
+
+                <div className={`rounded-xl border px-4 py-3 transition ${step >= 2 ? 'border-blue-200 bg-blue-50/50 opacity-100' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                    <p className="text-xs font-black text-gray-600 mb-2">Procesando búsqueda</p>
+                    <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-200" style={{ width: `${progress}%` }} />
+                    </div>
+                    <p className="text-right text-xs font-bold text-blue-700 mt-1">{progress}%</p>
+                </div>
+
+                <div className={`rounded-xl border border-gray-200 overflow-hidden transition ${step === 3 ? 'opacity-100' : 'opacity-40'}`}>
+                    <div className="grid grid-cols-3 bg-gray-100 px-3 py-2 text-[11px] font-black text-gray-600 uppercase tracking-wide">
+                        <span>Nombre</span>
+                        <span>Localidad</span>
+                        <span>Whatsapp</span>
+                    </div>
+                    {sampleLeads.slice(0, 3).map((lead) => (
+                        <div key={lead.id} className="grid grid-cols-3 px-3 py-2 text-xs border-t border-gray-100">
+                            <span className="font-bold text-gray-800 truncate pr-2">{lead.nombre}</span>
+                            <span className="text-gray-600">{lead.localidad}</span>
+                            <span className="text-blue-600 font-bold">{lead.whatsapp}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div
+                className="pointer-events-none absolute z-20 transition-all duration-500"
+                style={cursorPosition}
+                aria-hidden
+            >
+                <div className="relative">
+                    <FaMousePointer className="text-black drop-shadow text-[22px]" />
+                    {isClickMoment && (
+                        <>
+                            <span className="absolute -inset-2 rounded-full border-2 border-black/40 animate-ping" />
+                            <span
+                                className="absolute -inset-4 rounded-full border border-black/30 animate-ping"
+                                style={{ animationDelay: '120ms' }}
+                            />
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function SampleResultsModal({ onClose }: { onClose: () => void }) {
     React.useEffect(() => {
         const handleEsc = (event: KeyboardEvent) => {
@@ -447,44 +595,8 @@ function SampleResultsModal({ onClose }: { onClose: () => void }) {
                     </p>
                 </div>
 
-                <div className="overflow-x-auto flex-1 bg-gray-50 rounded-2xl border border-gray-100 mb-4 p-2">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-white">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Nombre</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Rubro</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Localidad</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">WhatsApp</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Instagram</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Facebook</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-gray-400 uppercase tracking-widest">Dirección</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {sampleLeads.map((lead) => (
-                                <tr key={lead.id} className="hover:bg-gray-50 transition text-[13px]">
-                                    <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{lead.nombre}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-gray-600 font-medium">{lead.rubro}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-gray-600">{lead.localidad}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-blue-600 font-black">
-                                        <div className="flex items-center gap-1">
-                                            {lead.whatsapp}
-                                            <FaCheck className="text-green-500 text-[10px]" />
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-pink-600 font-bold">
-                                        {lead.instagram || 'N/A'}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-blue-800 font-bold">
-                                        {lead.facebook || 'N/A'}
-                                    </td>
-                                    <td className="px-6 py-4 text-gray-500">
-                                        <div className="max-w-[150px] truncate" title={lead.direccion || ''}>{lead.direccion}</div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <div className="overflow-y-auto flex-1 bg-gray-50 rounded-2xl border border-gray-100 mb-4 p-3">
+                    <DemoJourneyVideo />
                 </div>
 
                 <div className="text-center pt-4">
@@ -502,11 +614,10 @@ function SampleResultsModal({ onClose }: { onClose: () => void }) {
 
 function LeadsApp() {
     const [rubro, setRubro] = useState('');
-    const [provincia, setProvincia] = useState('');
+    const [provincia, setProvincia] = useState('Buenos Aires');
     const [localidades, setLocalidades] = useState<string[]>([]);
-    const [dynamicProvincias, setDynamicProvincias] = useState<{ id: number, provincia: string }[]>([]);
     const [dynamicLocalidades, setDynamicLocalidades] = useState<Record<string, string[]>>({});
-    const [isLoadingGeo, setIsLoadingGeo] = useState({ provinces: false, localities: false });
+    const [isLoadingGeo, setIsLoadingGeo] = useState({ localities: false });
     const [isLoading, setIsLoading] = useState(false);
     const [results, setResults] = useState<Lead[]>([]);
     const [count, setCount] = useState<number | null>(null);
@@ -533,43 +644,32 @@ function LeadsApp() {
     const progressSectionRef = React.useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        const loadProvincias = async () => {
-            setIsLoadingGeo(prev => ({ ...prev, provinces: true }));
-            try {
-                const res = await axios.get('/api/geo/provincias');
-                setDynamicProvincias(res.data);
-            } catch (error) {
-                console.error('Error loading provinces:', error);
-            } finally {
-                setIsLoadingGeo(prev => ({ ...prev, provinces: false }));
-            }
-        };
-        loadProvincias();
-    }, []);
-
-    useEffect(() => {
         const loadLocalidades = async () => {
             if (!provincia) {
                 setDynamicLocalidades({});
                 return;
             }
 
-            const nameToId: Record<string, number> = { "Buenos Aires": 1, "Buenos Aires-GBA": 2 };
-            const provinciaId = nameToId[provincia];
-
-            if (!provinciaId) return;
-
             setIsLoadingGeo(prev => ({ ...prev, localities: true }));
             try {
-                const res = await axios.get(`/api/geo/localidades?provincia_id=${provinciaId}`);
-                // Group by zone
-                const grouped = res.data.reduce((acc: Record<string, string[]>, curr: { localidad: string, zona: string }) => {
-                    const zone = curr.zona || 'Sin Zona';
-                    if (!acc[zone]) acc[zone] = [];
-                    acc[zone].push(curr.localidad);
-                    return acc;
-                }, {});
-                setDynamicLocalidades(grouped);
+                const [resBuenosAires, resGba] = await Promise.all([
+                    axios.get('/api/geo/localidades?provincia_id=1'),
+                    axios.get('/api/geo/localidades?provincia_id=2')
+                ]);
+
+                const merged = [...resBuenosAires.data, ...resGba.data] as Array<{ localidad: string; zona?: string }>;
+                const uniqueLocalidades = Array.from(
+                    new Set(
+                        merged
+                            .map((item) => item.localidad)
+                            .filter((item): item is string => Boolean(item))
+                            .map((item) => normalizeLocalidadLabel(item))
+                            .filter((item): item is string => Boolean(item))
+                    )
+                ).sort((a, b) => a.localeCompare(b, 'es'));
+
+                // Keep API contract expected by LocalidadSelector (Record<string, string[]>)
+                setDynamicLocalidades({ 'Buenos Aires': uniqueLocalidades });
             } catch (error) {
                 console.error('Error loading localities:', error);
             } finally {
@@ -588,12 +688,12 @@ function LeadsApp() {
 
         // Restore metadata if available and relevant
         if (savedSearch) {
-            const { id, rubro: sRubro, provincia: sProv, localidades: sLocs, timestamp } = savedSearch;
+            const { id, rubro: sRubro, localidades: sLocs, timestamp } = savedSearch;
             // If ID matches or no ID in URL, restore
             if (!urlSearchId || urlSearchId === id) {
                 if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
                     setRubro(sRubro);
-                    setProvincia(sProv);
+                    setProvincia('Buenos Aires');
                     setLocalidades(sLocs);
                     if (!urlSearchId) setSearchId(id);
                 }
@@ -808,9 +908,12 @@ function LeadsApp() {
         if (!shouldShowProgress) return;
 
         const timeoutId = setTimeout(() => {
-            progressSectionRef.current?.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
+            const section = progressSectionRef.current;
+            if (!section) return;
+            const absoluteTop = window.scrollY + section.getBoundingClientRect().top - 24;
+            window.scrollTo({
+                top: Math.max(absoluteTop, 0),
+                behavior: 'smooth'
             });
         }, 120);
 
@@ -875,7 +978,7 @@ function LeadsApp() {
 
         // Limpieza de campos de formulario
         setRubro('');
-        setProvincia('');
+        setProvincia('Buenos Aires');
         setLocalidades([]);
 
         localStorage.removeItem('active_search');
@@ -890,14 +993,9 @@ function LeadsApp() {
         router.replace(`/?${params.toString()}`);
     };
 
-    const handleProvinciaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setProvincia(e.target.value);
-        // Keep selected localities when switching province so users can combine areas.
-        if (e.target.value) {
-            setIsLocalidadModalOpen(true);
-        } else {
-            setIsLocalidadModalOpen(false);
-        }
+    const handleProvinciaClick = () => {
+        if (!provincia) setProvincia('Buenos Aires');
+        setIsLocalidadModalOpen(true);
     };
 
     const handleRemoveLocalidad = (loc: string) => {
@@ -1014,48 +1112,52 @@ function LeadsApp() {
 
                 {/* Search Box */}
                 <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
+                    <div className="max-w-2xl mx-auto space-y-6">
                         {/* Rubro */}
-                        <div className="flex flex-col">
-                            <div className="input-base group">
-                                <span className="pl-6 pr-3 font-black text-gray-900 text-sm whitespace-nowrap">Rubro:</span>
-                                <input
-                                    type="text"
-                                    id="rubro"
-                                    value={rubro}
-                                    onChange={(e) => setRubro(e.target.value)}
-                                    placeholder="Ej: Abogados, Gimnasios..."
-                                    className="input-field font-black"
-                                />
-                            </div>
+                        <div className="text-center">
+                            <label htmlFor="rubro" className="block text-sm font-black tracking-wide text-gray-700 uppercase mb-2">
+                                Rubro
+                            </label>
+                            <input
+                                type="text"
+                                id="rubro"
+                                value={rubro}
+                                onChange={(e) => setRubro(e.target.value)}
+                                placeholder="Ej: hamburguesería, abogados, panadería..."
+                                className="w-full rounded-xl border-2 border-blue-200 bg-blue-50/50 px-5 py-4 text-center text-xl font-black text-gray-900 placeholder:text-gray-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                            />
+                            <p className="mt-2 text-xs font-medium text-gray-500">
+                                Escribí el tipo de negocio que querés buscar.
+                            </p>
                         </div>
 
                         {/* Provincia */}
-                        <div className="flex flex-col">
-                            <div className="input-base group border-gray-200">
-                                <select
-                                    id="provincia"
-                                    value={provincia}
-                                    onChange={handleProvinciaChange}
-                                    className="input-field cursor-pointer font-black w-full pl-6"
-                                    disabled={isLoadingGeo.provinces}
-                                >
-                                    <option value="">{isLoadingGeo.provinces ? 'Cargando provincias...' : 'Provincia'}</option>
-                                    {dynamicProvincias.map(p => <option key={p.id} value={p.provincia}>{p.provincia}</option>)}
-                                </select>
-                            </div>
+                        <div className="text-center">
+                            <label htmlFor="provincia" className="block text-sm font-black tracking-wide text-gray-700 uppercase mb-2">
+                                Provincia
+                            </label>
+                            <button
+                                id="provincia"
+                                type="button"
+                                onClick={handleProvinciaClick}
+                                className="w-full rounded-xl border-2 border-gray-200 bg-white px-5 py-4 text-center text-2xl font-black text-gray-900 outline-none transition hover:border-blue-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 cursor-pointer"
+                            >
+                                {provincia}
+                            </button>
+                            <p className="mt-2 text-xs font-medium text-gray-500">
+                                Hacé clic para abrir el selector de localidades.
+                            </p>
                         </div>
                     </div>
 
                     {/* Localidades */}
                     {provincia && (
-                        <div className="mt-6">
-                            <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                        <div className="mt-8 max-w-2xl mx-auto">
+                            <label className="text-sm font-black tracking-wide text-gray-700 uppercase mb-2 block text-center">
                                 Seleccioná las localidades
                             </label>
 
-                            <div className="max-h-64 overflow-y-auto p-2 border rounded-lg bg-gray-50">
+                            <div className="p-3 border rounded-xl bg-gray-50">
                                 {(() => {
                                     if (isLoadingGeo.localities) {
                                         return <p className="text-xs text-center text-gray-400 py-8">Cargando localidades...</p>;
@@ -1072,7 +1174,7 @@ function LeadsApp() {
                                     );
                                 })()}
                             </div>
-                            <p className="text-xs text-right text-gray-500 mt-1">
+                            <p className="text-xs text-right text-gray-500 mt-1 font-semibold">
                                 Seleccionados: {localidades.length}
                             </p>
                             {localidades.length > 0 && (

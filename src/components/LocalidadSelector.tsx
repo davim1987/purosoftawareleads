@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FaSearch, FaTimes, FaCheck } from 'react-icons/fa';
 
 interface LocalidadSelectorProps {
@@ -9,38 +9,12 @@ interface LocalidadSelectorProps {
     onOpenChange: (open: boolean) => void;
 }
 
-interface ZoneCheckboxProps {
-    checked: boolean;
-    indeterminate: boolean;
-    onChange: () => void;
-}
-
 function normalizeText(value: string) {
     return value
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .trim();
-}
-
-function ZoneCheckbox({ checked, indeterminate, onChange }: ZoneCheckboxProps) {
-    const ref = useRef<HTMLInputElement | null>(null);
-
-    useEffect(() => {
-        if (ref.current) {
-            ref.current.indeterminate = indeterminate;
-        }
-    }, [indeterminate]);
-
-    return (
-        <input
-            ref={ref}
-            type="checkbox"
-            checked={checked}
-            onChange={onChange}
-            className="h-4 w-4 cursor-pointer accent-blue-600"
-        />
-    );
 }
 
 const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
@@ -51,72 +25,47 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
     onOpenChange
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [expandedZones, setExpandedZones] = useState<Record<string, boolean>>({});
     const [draftLocalidades, setDraftLocalidades] = useState<string[]>(localidades);
 
-    const zoneEntries = useMemo(() => Object.entries(localidadesPorZona), [localidadesPorZona]);
-    const totalAvailable = useMemo(
-        () => zoneEntries.reduce((acc, [, locs]) => acc + locs.length, 0),
-        [zoneEntries]
+    const allLocalidades = useMemo(
+        () =>
+            Object.values(localidadesPorZona)
+                .flat()
+                .filter(Boolean),
+        [localidadesPorZona]
     );
+    const totalAvailable = allLocalidades.length;
 
     const openModal = () => {
         setDraftLocalidades(localidades);
         setSearchTerm('');
-        setExpandedZones({});
         onOpenChange(true);
     };
 
     const closeModal = () => {
         setDraftLocalidades(localidades);
         setSearchTerm('');
-        setExpandedZones({});
         onOpenChange(false);
     };
 
     const saveSelection = () => {
         onSave(draftLocalidades);
         setSearchTerm('');
-        setExpandedZones({});
         onOpenChange(false);
     };
 
     const draftSet = useMemo(() => new Set(draftLocalidades), [draftLocalidades]);
     const normalizedSearch = normalizeText(searchTerm);
 
-    const filteredZones = useMemo(() => {
-        if (!normalizedSearch) return zoneEntries;
-
-        return zoneEntries
-            .map(([zoneName, locs]) => [
-                zoneName,
-                locs.filter((loc) => normalizeText(loc).includes(normalizedSearch))
-            ] as [string, string[]])
-            .filter(([, locs]) => locs.length > 0);
-    }, [zoneEntries, normalizedSearch]);
-
-    const toggleZoneOpen = (zoneName: string) => {
-        setExpandedZones((prev) => ({ ...prev, [zoneName]: !prev[zoneName] }));
-    };
+    const filteredLocalidades = useMemo(() => {
+        if (!normalizedSearch) return allLocalidades;
+        return allLocalidades.filter((loc) => normalizeText(loc).includes(normalizedSearch));
+    }, [allLocalidades, normalizedSearch]);
 
     const toggleLocalidad = (loc: string) => {
         setDraftLocalidades((prev) => (
             prev.includes(loc) ? prev.filter((item) => item !== loc) : [...prev, loc]
         ));
-    };
-
-    const toggleWholeZone = (zoneLocs: string[]) => {
-        const selectedInZone = zoneLocs.filter((loc) => draftSet.has(loc));
-        const shouldSelectAll = selectedInZone.length !== zoneLocs.length;
-
-        setDraftLocalidades((prev) => {
-            const set = new Set(prev);
-            zoneLocs.forEach((loc) => {
-                if (shouldSelectAll) set.add(loc);
-                else set.delete(loc);
-            });
-            return Array.from(set);
-        });
     };
 
     return (
@@ -136,7 +85,7 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
                             <div>
                                 <h3 className="text-lg font-black text-gray-900">Seleccionar Localidades</h3>
                                 <p className="text-xs text-gray-500">
-                                    Marcá localidades individuales o toda una zona.
+                                    Seleccioná las localidades que querés incluir en la búsqueda.
                                 </p>
                             </div>
                             <button
@@ -160,76 +109,35 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
                                 />
                             </div>
 
-                            <div className="space-y-3">
-                                {filteredZones.map(([zoneName, zoneLocs]) => {
-                                    const selectedCount = zoneLocs.filter((loc) => draftSet.has(loc)).length;
-                                    const allSelected = zoneLocs.length > 0 && selectedCount === zoneLocs.length;
-                                    const partiallySelected = selectedCount > 0 && selectedCount < zoneLocs.length;
-                                    const isExpanded = normalizedSearch ? true : (expandedZones[zoneName] ?? false);
-
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                {filteredLocalidades.map((loc) => {
+                                    const isSelected = draftSet.has(loc);
                                     return (
-                                        <div key={zoneName} className="rounded-xl border border-gray-200">
-                                            <div
-                                                className="px-3 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between cursor-pointer"
-                                                onClick={() => toggleZoneOpen(zoneName)}
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <div onClick={(e) => e.stopPropagation()}>
-                                                        <ZoneCheckbox
-                                                            checked={allSelected}
-                                                            indeterminate={partiallySelected}
-                                                            onChange={() => toggleWholeZone(zoneLocs)}
-                                                        />
-                                                    </div>
-                                                    <div className="text-left">
-                                                        <p className="text-sm font-bold text-gray-800 uppercase">{zoneName}</p>
-                                                        <p className="text-xs text-gray-500">
-                                                            {selectedCount} / {zoneLocs.length} seleccionadas
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                {!normalizedSearch && (
-                                                    <span className="text-xs font-bold text-blue-600">
-                                                        {isExpanded ? 'Ocultar' : 'Ver'}
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {isExpanded && (
-                                                <div className="p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                                    {zoneLocs.map((loc) => {
-                                                        const isSelected = draftSet.has(loc);
-                                                        return (
-                                                            <label
-                                                                key={loc}
-                                                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition ${
-                                                                    isSelected
-                                                                        ? 'border-blue-300 bg-blue-50 text-blue-900'
-                                                                        : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200'
-                                                                }`}
-                                                            >
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={isSelected}
-                                                                    onChange={() => toggleLocalidad(loc)}
-                                                                    className="h-4 w-4 cursor-pointer accent-blue-600"
-                                                                />
-                                                                <span className="text-sm">{loc}</span>
-                                                            </label>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
+                                        <label
+                                            key={loc}
+                                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition ${
+                                                isSelected
+                                                    ? 'border-blue-300 bg-blue-50 text-blue-900'
+                                                    : 'border-gray-200 bg-white text-gray-700 hover:border-blue-200'
+                                            }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => toggleLocalidad(loc)}
+                                                className="h-4 w-4 cursor-pointer accent-blue-600"
+                                            />
+                                            <span className="text-sm">{loc}</span>
+                                        </label>
                                     );
                                 })}
-
-                                {filteredZones.length === 0 && (
-                                    <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
-                                        No encontramos localidades con ese nombre.
-                                    </div>
-                                )}
                             </div>
+
+                            {filteredLocalidades.length === 0 && (
+                                <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+                                    No encontramos localidades con ese nombre.
+                                </div>
+                            )}
                         </div>
 
                         <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between gap-3">
