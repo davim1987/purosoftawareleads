@@ -69,6 +69,14 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
         ));
     };
 
+    const selectAllLocalidades = () => {
+        setDraftLocalidades(allLocalidades);
+    };
+
+    const clearAllLocalidades = () => {
+        setDraftLocalidades([]);
+    };
+
     return (
         <div className="w-full">
             <button
@@ -154,7 +162,21 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
                             <p className="text-sm font-bold text-gray-700">
                                 Seleccionadas: {draftLocalidades.length}
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                                <button
+                                    type="button"
+                                    onClick={selectAllLocalidades}
+                                    className="px-4 py-2 rounded-lg border border-blue-200 text-blue-700 font-bold hover:bg-blue-50"
+                                >
+                                    Seleccionar todas
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={clearAllLocalidades}
+                                    className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 font-bold hover:bg-gray-50"
+                                >
+                                    Limpiar
+                                </button>
                                 <button
                                     type="button"
                                     onClick={closeModal}
