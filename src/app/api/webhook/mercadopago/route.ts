@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { upsertOrder } from '@/lib/orders';
+import { startEnrichment } from '@/lib/enrichment';
 
 const getMercadoPagoClient = () => {
     const token = process.env.MP_ACCESS_TOKEN;
@@ -58,53 +59,54 @@ export async function POST(req: NextRequest) {
                         quantityPaid: Number(paymentData.metadata?.quantity || 1),
                         amountPaid: Number(paymentData.transaction_amount || 0),
                         paymentStatus: 'approved',
-                        deliveryStatus: 'processing',
+                        deliveryStatus: 'pending',
                         providerPaymentId: paymentData.id ? String(paymentData.id) : null,
                         source: 'mp_webhook',
                         metadata: {
                             mp_status: paymentData.status || null
                         }
                     });
-                }
 
-                const payload = {
-                    tipo: 'consulta_clientepago',
-                    action: 'deep_scrape',
-                    searchId: finalSearchId,
-                    phone: paymentData.metadata?.client_phone,
-                    email: paymentData.metadata?.client_email,
-                    payment_id: paymentData.id,
-                    monto_pagado: paymentData.transaction_amount,
-                    cantidad_leads: paymentData.metadata?.quantity || 1,
-                    rubro: paymentData.metadata?.rubro,
-                    provincia: paymentData.metadata?.provincia,
-                    ciudad: paymentData.metadata?.provincia,
-                    localidades: paymentData.metadata?.localidades,
-                    status_pago: 'approved',
-                    coordenadas: paymentData.metadata?.coords ? JSON.parse(paymentData.metadata.coords) : null
-                };
+                    // Trigger enrichment (replaces n8n deep scrape)
+                    try {
+                        const result = await startEnrichment(finalSearchId);
+                        console.log(`[MP Webhook] Enrichment: jobId=${result.jobId}, ok=${result.ok}, skipped=${result.skipped || false}`);
 
-                const n8nUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n-n8n.3htcbh.easypanel.host/webhook-test/lead';
-
-                console.log(`[MP Webhook] Sending payload to n8n: ${n8nUrl}`, JSON.stringify(payload, null, 2));
-
-                try {
-                    const response = await fetch(n8nUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(payload),
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error(`[MP Webhook] n8n Webhook failed with status ${response.status}:`, errorText);
-                    } else {
-                        console.log('[MP Webhook] Successfully notified n8n webhook');
+                        if (!result.ok && result.message === 'No businesses found for enrichment') {
+                            console.log('[MP Webhook] No businesses for enrichment, triggering direct delivery');
+                            const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
+                            await deliverOrderBySearchId(finalSearchId);
+                        } else if (result.ok) {
+                            await upsertOrder({
+                                searchId: finalSearchId,
+                                deliveryStatus: 'processing',
+                                source: 'mp_webhook',
+                                metadata: {
+                                    enrichment_job_id: result.jobId,
+                                    enrichment_queue_status: result.skipped ? 'skipped_existing' : 'queued'
+                                }
+                            });
+                        } else {
+                            await upsertOrder({
+                                searchId: finalSearchId,
+                                deliveryStatus: 'pending',
+                                source: 'mp_webhook',
+                                metadata: {
+                                    enrichment_queue_error: result.message || 'unknown queue error'
+                                }
+                            });
+                        }
+                    } catch (enrichError) {
+                        console.error('[MP Webhook] Enrichment trigger failed:', enrichError);
+                        await upsertOrder({
+                            searchId: finalSearchId,
+                            deliveryStatus: 'pending',
+                            source: 'mp_webhook',
+                            metadata: {
+                                enrichment_queue_error: enrichError instanceof Error ? enrichError.message : String(enrichError)
+                            }
+                        });
                     }
-                } catch (webhookError) {
-                    console.error('[MP Webhook] Fetch error calling n8n:', webhookError);
                 }
             } else {
                 const fallbackSearchId = paymentData.external_reference;

@@ -43,10 +43,22 @@ interface LeadRow {
     [key: string]: unknown;
 }
 
+interface EnrichedLeadRow extends LeadRow {
+    enriched_phone?: string;
+    enriched_email?: string;
+    enriched_email2?: string;
+    enriched_whatsapp?: string;
+    enriched_website?: string;
+    enriched_instagram?: string;
+    enriched_facebook?: string;
+    enriched_linkedin?: string;
+}
+
 interface DeliverResult {
     ok: boolean;
     message: string;
     deliveredCount?: number;
+    downloadToken?: string;
     dryRun?: boolean;
     debug?: {
         selectedCount: number;
@@ -58,8 +70,15 @@ interface DeliverResult {
 
 interface ProviderSendResult {
     ok: boolean;
-    provider: 'resend' | 'n8n_webhook';
+    provider: 'resend';
     error?: string;
+}
+
+interface EnrichmentData {
+    emails: string[];
+    phones: string[];
+    whatsapps: string[];
+    sources: { type: string; url: string }[];
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -93,7 +112,7 @@ function readString(obj: LeadRow, ...keys: string[]) {
     return '';
 }
 
-function toCsv(rows: LeadRow[]) {
+function toCsv(rows: EnrichedLeadRow[]) {
     const headers = [
         'Nombre',
         'Rubro',
@@ -101,27 +120,37 @@ function toCsv(rows: LeadRow[]) {
         'Localidad',
         'Provincia',
         'WhatsApp',
+        'Telefono',
         'Email',
+        'Email2',
         'Web',
         'Instagram',
         'Facebook',
+        'LinkedIn',
         'Horario'
     ];
 
     const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
     const body = rows.map((row) => {
+        const baseWhatsApp = readString(row, 'Whatssap', 'whatsapp');
+        const baseEmail = readString(row, 'Email', 'email');
+        const baseWeb = readString(row, 'Web', 'web');
+
         const values = [
             readString(row, 'Nombre', 'nombre'),
             readString(row, 'Rubro', 'rubro'),
             readString(row, 'Direccion', 'direccion'),
             readString(row, 'Localidad', 'localidad'),
             readString(row, 'Provincia', 'provincia'),
-            readString(row, 'Whatssap', 'whatsapp'),
-            readString(row, 'Email', 'email'),
-            readString(row, 'Web', 'web'),
-            readString(row, 'instagram'),
-            readString(row, 'Facebook'),
+            row.enriched_whatsapp || baseWhatsApp,
+            row.enriched_phone || '',
+            row.enriched_email || baseEmail,
+            row.enriched_email2 || '',
+            row.enriched_website || baseWeb,
+            row.enriched_instagram || readString(row, 'instagram'),
+            row.enriched_facebook || readString(row, 'Facebook'),
+            row.enriched_linkedin || '',
             readString(row, 'Horario', 'horario', 'opening_hours')
         ];
 
@@ -201,27 +230,94 @@ async function sendByResend(to: string, subject: string, html: string, filename:
     return { ok: true, provider: 'resend' };
 }
 
-async function sendByN8nWebhook(payload: Record<string, unknown>): Promise<ProviderSendResult> {
-    const webhook = process.env.N8N_DELIVERY_WEBHOOK_URL;
-    if (!webhook) {
-        return { ok: false, provider: 'n8n_webhook', error: 'Missing N8N_DELIVERY_WEBHOOK_URL' };
+/**
+ * Fetch enrichment data (contacts + sources) for the given search_id,
+ * grouped by business_id.
+ */
+async function fetchEnrichmentData(searchId: string): Promise<Map<string, EnrichmentData>> {
+    const map = new Map<string, EnrichmentData>();
+
+    const [contactsResult, sourcesResult] = await Promise.all([
+        supabase.from('lead_contacts').select('*').eq('search_id', searchId),
+        supabase.from('lead_sources').select('*').eq('search_id', searchId),
+    ]);
+
+    const contacts = (contactsResult.data || []) as Array<{
+        business_id: string;
+        contact_type: string;
+        normalized_value: string;
+        is_valid: boolean;
+    }>;
+
+    const sources = (sourcesResult.data || []) as Array<{
+        business_id: string;
+        source_type: string;
+        url: string;
+    }>;
+
+    for (const contact of contacts) {
+        if (!map.has(contact.business_id)) {
+            map.set(contact.business_id, { emails: [], phones: [], whatsapps: [], sources: [] });
+        }
+        const entry = map.get(contact.business_id)!;
+
+        if (contact.contact_type === 'email' && contact.is_valid) {
+            entry.emails.push(contact.normalized_value);
+        } else if (contact.contact_type === 'phone' && contact.is_valid) {
+            entry.phones.push(contact.normalized_value);
+        } else if (contact.contact_type === 'whatsapp' && contact.is_valid) {
+            entry.whatsapps.push(contact.normalized_value);
+        }
     }
 
-    const response = await fetch(webhook, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        const errorMessage = `HTTP ${response.status}: ${errorText}`;
-        console.error('[Delivery] n8n delivery webhook error:', errorMessage);
-        return { ok: false, provider: 'n8n_webhook', error: errorMessage };
+    for (const source of sources) {
+        if (!map.has(source.business_id)) {
+            map.set(source.business_id, { emails: [], phones: [], whatsapps: [], sources: [] });
+        }
+        map.get(source.business_id)!.sources.push({
+            type: source.source_type,
+            url: source.url,
+        });
     }
-    return { ok: true, provider: 'n8n_webhook' };
+
+    return map;
+}
+
+/**
+ * Merge enriched data into a lead row. Prefers enriched data over base data.
+ */
+function mergeLeadWithEnrichment(lead: LeadRow, enrichment: EnrichmentData | undefined): EnrichedLeadRow {
+    const enriched: EnrichedLeadRow = { ...lead };
+
+    if (!enrichment) return enriched;
+
+    // Emails: first enriched email as primary, second as email2
+    if (enrichment.emails.length > 0) {
+        enriched.enriched_email = enrichment.emails[0];
+    }
+    if (enrichment.emails.length > 1) {
+        enriched.enriched_email2 = enrichment.emails[1];
+    }
+
+    // Phones
+    if (enrichment.phones.length > 0) {
+        enriched.enriched_phone = enrichment.phones[0];
+    }
+
+    // WhatsApp: prefer enriched whatsapp over base
+    if (enrichment.whatsapps.length > 0) {
+        enriched.enriched_whatsapp = enrichment.whatsapps[0];
+    }
+
+    // Sources
+    for (const source of enrichment.sources) {
+        if (source.type === 'website') enriched.enriched_website = source.url;
+        if (source.type === 'instagram') enriched.enriched_instagram = source.url;
+        if (source.type === 'facebook') enriched.enriched_facebook = source.url;
+        if (source.type === 'linkedin') enriched.enriched_linkedin = source.url;
+    }
+
+    return enriched;
 }
 
 interface DeliverOptions {
@@ -339,24 +435,36 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     }
 
     const selectedLeads = Array.from(uniqueMap.values()).slice(0, Math.max(1, order.quantity_paid));
-    const csv = toCsv(selectedLeads);
+
+    // Fetch enrichment data and merge with base leads
+    const enrichmentMap = await fetchEnrichmentData(searchId);
+    const enrichedLeads: EnrichedLeadRow[] = selectedLeads.map((lead) => {
+        const leadId = readString(lead, 'id') || `${readString(lead, 'Nombre', 'nombre')}_${readString(lead, 'Localidad', 'localidad')}`;
+        return mergeLeadWithEnrichment(lead, enrichmentMap.get(leadId));
+    });
+
+    const csv = toCsv(enrichedLeads);
     const base64Csv = Buffer.from(csv, 'utf-8').toString('base64');
     const filename = `leads_${order.rubro}_${searchId}.csv`.replace(/\s+/g, '_');
 
-    const subject = `Tus leads (${selectedLeads.length}) - ${order.rubro}`;
+    const subject = `Tus leads (${enrichedLeads.length}) - ${order.rubro}`;
     const html = `
         <h2>Tus leads están listos</h2>
-        <p>Adjuntamos ${selectedLeads.length} contactos de ${order.rubro}.</p>
+        <p>Adjuntamos ${enrichedLeads.length} contactos de ${order.rubro}.</p>
         <p>Localidades: ${localidades.join(', ') || 'Todas'}</p>
         <p>Monto pagado: ${order.currency} ${order.amount_paid}</p>
     `;
 
     const filterMode: 'strict' | 'rubro_fallback' = filteredLeads.length > 0 ? 'strict' : 'rubro_fallback';
 
+    // Generate download token for direct CSV download
+    const downloadToken = crypto.randomUUID();
+    const downloadExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+
     if (dryRun) {
         await setDeliveryState(searchId, 'processing', {
             delivery_dry_run_at: new Date().toISOString(),
-            delivery_dry_run_count: selectedLeads.length,
+            delivery_dry_run_count: enrichedLeads.length,
             delivery_dry_run_filename: filename,
             locality_filter_mode: filterMode
         });
@@ -365,9 +473,9 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
             ok: true,
             dryRun: true,
             message: 'Dry run OK: leads found and CSV built',
-            deliveredCount: selectedLeads.length,
+            deliveredCount: enrichedLeads.length,
             debug: {
-                selectedCount: selectedLeads.length,
+                selectedCount: enrichedLeads.length,
                 filename,
                 localidades,
                 filterMode
@@ -376,44 +484,47 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     }
 
     const resendResult = await sendByResend(order.email, subject, html, filename, base64Csv);
-    let n8nResult: ProviderSendResult | null = null;
 
     if (!resendResult.ok) {
-        n8nResult = await sendByN8nWebhook({
-            searchId,
-            email: order.email,
-            phone: order.phone,
-            filename,
-            file_base64: base64Csv,
-            rubro: order.rubro,
-            localidades,
-            quantity: selectedLeads.length,
-            amount_paid: order.amount_paid,
-            currency: order.currency
-        });
+        console.error('[Delivery] Resend failed, CSV still available for direct download');
     }
 
-    if (!resendResult.ok && !n8nResult?.ok) {
-        const details = [
-            `resend: ${resendResult.error || 'unknown error'}`,
-            `n8n: ${n8nResult?.error || 'not attempted or unknown error'}`
-        ].join(' | ');
+    // Store CSV for direct download regardless of email result
+    await supabase
+        .from('orders')
+        .update({
+            csv_storage_key: base64Csv,
+            download_token: downloadToken,
+            download_expires_at: downloadExpiresAt,
+        })
+        .eq('search_id', searchId);
 
-        await setDeliveryState(searchId, 'failed', {
-            delivery_error: 'No email delivery provider configured or delivery failed',
-            delivery_provider_errors: details
+    if (!resendResult.ok) {
+        // Email failed but download is available
+        await setDeliveryState(searchId, 'sent', {
+            delivery_provider: 'download_only',
+            delivery_error: resendResult.error || null,
+            delivered_count: enrichedLeads.length,
+            delivered_filename: filename,
+            locality_filter_mode: filterMode,
+            download_token: downloadToken,
         });
-        return { ok: false, message: `Delivery failed: ${details}` };
+
+        return {
+            ok: true,
+            message: 'Email delivery failed but CSV is available for download',
+            deliveredCount: enrichedLeads.length,
+            downloadToken,
+        };
     }
 
     await setDeliveryState(searchId, 'sent', {
-        delivery_provider: resendResult.ok ? 'resend' : 'n8n_webhook',
-        delivered_count: selectedLeads.length,
+        delivery_provider: 'resend',
+        delivered_count: enrichedLeads.length,
         delivered_filename: filename,
         locality_filter_mode: filterMode,
-        resend_error: resendResult.ok ? null : resendResult.error || null,
-        n8n_delivery_error: n8nResult && !n8nResult.ok ? n8nResult.error || null : null
+        download_token: downloadToken,
     });
 
-    return { ok: true, message: 'Delivered successfully', deliveredCount: selectedLeads.length };
+    return { ok: true, message: 'Delivered successfully', deliveredCount: enrichedLeads.length, downloadToken };
 }

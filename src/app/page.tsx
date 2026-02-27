@@ -715,6 +715,7 @@ function LeadsApp() {
     const [currentLocIndex, setCurrentLocIndex] = useState(0);
     const [displayProgress, setDisplayProgress] = useState(0);
     const [searchCoords, setSearchCoords] = useState<Record<string, { lat: number, lon: number }>>({});
+    const [downloadToken, setDownloadToken] = useState<string | null>(null);
 
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -917,7 +918,7 @@ function LeadsApp() {
         };
     }, [isInitialSearch, searchId, localidades, searchParams, rubro, provincia, router]);
 
-    // 3. Post-Payment Polling (Only status until n8n callback confirms completion)
+    // 3. Post-Payment Polling (enrichment progress + completion)
     React.useEffect(() => {
         let timer: NodeJS.Timeout;
 
@@ -931,12 +932,32 @@ function LeadsApp() {
 
                 console.log('Polling status after payment...', { searchId, rubro });
                 try {
-                    // 1. Check Status first to see if n8n notified us
+                    // 1. Check enrichment progress
+                    try {
+                        const enrichRes = await axios.get(`/api/enrichment/status?searchId=${searchId}`);
+                        const enrichData = enrichRes.data;
+
+                        if (enrichData.status === 'processing' && enrichData.total > 0) {
+                            const pct = Math.floor((enrichData.processed / enrichData.total) * 100);
+                            setSearchStatus(`enriching_${pct}`);
+                            setDisplayProgress(pct);
+                        }
+
+                        if (enrichData.downloadToken) {
+                            setDownloadToken(enrichData.downloadToken);
+                        }
+                    } catch {
+                        // Enrichment status endpoint may not exist yet, continue with search status
+                    }
+
+                    // 2. Check search_tracking status for completion
                     if (searchId) {
                         const statusRes = await axios.get(`/api/search/status?id=${searchId}`);
                         const { status: currentStatus, rubro: sRubro, localidades: sLocs } = statusRes.data;
 
-                        if (currentStatus) setSearchStatus(currentStatus);
+                        if (currentStatus && !currentStatus.startsWith?.('enriching_')) {
+                            setSearchStatus(currentStatus);
+                        }
 
                         // Rehydrate metadata if missing (happens on post-payment return)
                         if (!rubro && sRubro) setRubro(sRubro);
@@ -953,7 +974,17 @@ function LeadsApp() {
                                 return;
                             }
 
-                            // Only now fetch full results from DB.
+                            // Fetch download token if we don't have it yet
+                            if (!downloadToken) {
+                                try {
+                                    const enrichRes = await axios.get(`/api/enrichment/status?searchId=${searchId}`);
+                                    if (enrichRes.data.downloadToken) {
+                                        setDownloadToken(enrichRes.data.downloadToken);
+                                    }
+                                } catch { /* ignore */ }
+                            }
+
+                            // Fetch full results from DB.
                             const response = await axios.post(`/api/search?full=true`, {
                                 rubro: effectiveRubro,
                                 provincia,
@@ -969,24 +1000,23 @@ function LeadsApp() {
                         }
                     }
 
-                    // No full-data polling here: wait for explicit n8n callback status.
                     setPollCount(prev => prev + 1);
-                    if (pollCount > 100) { // Extended timeout for deep search
+                    if (pollCount > 100) { // Extended timeout for enrichment
                         setIsProcessing(false);
                         setIsLoading(false);
-                        setError('El procesamiento está tardando. Te avisaremos por WhatsApp apenas terminen de enviarse.');
+                        setError('El procesamiento está tardando. Te avisaremos por email apenas terminen de enviarse.');
                         clearInterval(timer);
                     }
                 } catch (err) {
                     console.error('Polling error:', err);
                 }
-            }, 3000); // Speed up to 3 seconds
+            }, 3000);
         }
 
         return () => {
             if (timer) clearInterval(timer);
         };
-    }, [isProcessing, searchId, rubro, provincia, localidades, pollCount]);
+    }, [isProcessing, searchId, rubro, provincia, localidades, pollCount, downloadToken]);
 
     useEffect(() => {
         const shouldShowProgress = (isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle';
@@ -1008,6 +1038,12 @@ function LeadsApp() {
     const calculateProgress = (status: string) => {
         if (status === 'completed' || status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 100;
         if (status === 'error' || status === 'idle') return 0;
+
+        // Enrichment progress (enriching_XX format)
+        if (status.startsWith('enriching_')) {
+            const pct = parseInt(status.split('_')[1]) || 0;
+            return Math.min(pct, 95);
+        }
 
         // If we have a displayProgress (from initial search), use it
         if (displayProgress > 0) return Math.floor(displayProgress);
@@ -1032,6 +1068,7 @@ function LeadsApp() {
         if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return '✅ ¡LEADS ENVIADOS!';
         if (status === 'error') return '❌ ERROR EN EL PROCESO';
         if (status.includes('Geolocalizando') || status === 'geolocating') return '⚙️ GEOLOCALIZANDO...';
+        if (status.startsWith('enriching_')) return '⌛ ENRIQUECIENDO CONTACTOS...';
         return '⌛ INICIANDO SCRAPER...';
     };
 

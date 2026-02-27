@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { upsertOrder } from '@/lib/orders';
+import { startEnrichment } from '@/lib/enrichment';
 
 const getMercadoPagoClient = () => {
     const token = process.env.MP_ACCESS_TOKEN;
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
                 quantityPaid: Number(paymentData.metadata?.quantity || 1),
                 amountPaid: Number(paymentData.transaction_amount || 0),
                 paymentStatus: 'approved',
-                deliveryStatus: 'processing',
+                deliveryStatus: 'pending',
                 providerPaymentId: paymentData.id ? String(paymentData.id) : null,
                 source: 'payment_verify',
                 metadata: {
@@ -66,48 +67,51 @@ export async function POST(req: NextRequest) {
                 }
             });
 
-            const payload = {
-                tipo: 'consulta_clientepago',
-                action: 'deep_scrape',
-                searchId: finalSearchId,
-                phone: paymentData.metadata?.client_phone,
-                email: paymentData.metadata?.client_email,
-                payment_id: paymentData.id,
-                monto_pagado: paymentData.transaction_amount,
-                cantidad_leads: paymentData.metadata?.quantity || 1,
-                rubro: paymentData.metadata?.rubro,
-                provincia: paymentData.metadata?.provincia,
-                ciudad: paymentData.metadata?.provincia,
-                localidades: paymentData.metadata?.localidades,
-                status_pago: 'approved',
-                source: 'frontend_fallback',
-                coordenadas: paymentData.metadata?.coords ? JSON.parse(paymentData.metadata.coords) : null
-            };
-
-            const n8nUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n-n8n.3htcbh.easypanel.host/webhook-test/lead';
-
-            console.log(`[Payment Fallback] Notifying n8n: ${n8nUrl}`);
-
+            // Trigger enrichment (replaces n8n deep scrape)
             try {
-                const response = await fetch(n8nUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(payload),
-                });
+                const result = await startEnrichment(finalSearchId);
+                console.log(`[Payment Fallback] Enrichment: jobId=${result.jobId}, ok=${result.ok}, skipped=${result.skipped || false}`);
 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error(`[Payment Fallback] n8n failed:`, errorText);
-                    return NextResponse.json({ status: 'n8n_error', details: errorText }, { status: 500 });
+                if (!result.ok && result.message === 'No businesses found for enrichment') {
+                    console.log('[Payment Fallback] No businesses for enrichment, triggering direct delivery');
+                    const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
+                    await deliverOrderBySearchId(finalSearchId);
+                    return NextResponse.json({ status: 'delivery_triggered_no_enrichment' });
                 }
 
-                console.log('[Payment Fallback] n8n notified successfully');
-                return NextResponse.json({ status: 'ok', message: 'Notification sent' });
-            } catch (webhookError) {
-                console.error('[Payment Fallback] Fetch error calling n8n:', webhookError);
-                return NextResponse.json({ error: 'Webhook delivery failed' }, { status: 500 });
+                if (result.ok) {
+                    await upsertOrder({
+                        searchId: finalSearchId,
+                        deliveryStatus: 'processing',
+                        source: 'payment_verify',
+                        metadata: {
+                            enrichment_job_id: result.jobId,
+                            enrichment_queue_status: result.skipped ? 'skipped_existing' : 'queued'
+                        }
+                    });
+                    return NextResponse.json({ status: 'enrichment_queued', jobId: result.jobId });
+                }
+
+                await upsertOrder({
+                    searchId: finalSearchId,
+                    deliveryStatus: 'pending',
+                    source: 'payment_verify',
+                    metadata: {
+                        enrichment_queue_error: result.message || 'unknown queue error'
+                    }
+                });
+                return NextResponse.json({ status: 'enrichment_trigger_failed', message: result.message || 'Enrichment trigger failed' }, { status: 200 });
+            } catch (enrichError) {
+                console.error('[Payment Fallback] Enrichment trigger failed:', enrichError);
+                await upsertOrder({
+                    searchId: finalSearchId,
+                    deliveryStatus: 'pending',
+                    source: 'payment_verify',
+                    metadata: {
+                        enrichment_queue_error: enrichError instanceof Error ? enrichError.message : String(enrichError)
+                    }
+                });
+                return NextResponse.json({ status: 'enrichment_trigger_failed', message: 'Enrichment trigger failed' }, { status: 200 });
             }
         } else {
             const fallbackSearchId = searchId || paymentData.external_reference;
