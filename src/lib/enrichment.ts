@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/db';
 
-const PY_WORKER_URL = (process.env.PY_WORKER_URL || 'http://localhost:8000').replace(/\/+$/, '');
+const PY_WORKER_URL = (process.env.ENRICHMENT_WORKER_URL || process.env.PY_WORKER_URL || 'http://localhost:8000').replace(/\/+$/, '');
 const PY_WORKER_SECRET = process.env.PY_WORKER_SECRET || '';
 const ENRICHMENT_BATCH_SIZE = Number(process.env.ENRICHMENT_BATCH_SIZE || 100);
 const ENRICHMENT_MAX_RETRIES = Number(process.env.ENRICHMENT_MAX_RETRIES || 3);
