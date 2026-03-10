@@ -790,11 +790,12 @@ function LeadsApp() {
     }, [isProcessing, searchId, rubro, provincia, localidades, pollCount, downloadToken]);
 
     useEffect(() => {
-        const shouldShowProgress = (isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle';
+        // Only auto-scroll during initial search, NOT during enrichment/post-payment
+        const shouldShowProgress = (isLoading || isInitialSearch) && searchStatus !== 'idle';
         if (!shouldShowProgress || !searchId) return;
 
         // One-time scroll guard per search phase
-        const scrollKey = `scrolled_${searchId}_${isProcessing ? 'enrich' : 'search'}`;
+        const scrollKey = `scrolled_${searchId}_search`;
         if (sessionStorage.getItem(scrollKey)) return;
 
         const section = progressSectionRef.current;
@@ -814,7 +815,7 @@ function LeadsApp() {
             }, 150);
             return () => clearTimeout(timeoutId);
         }
-    }, [isLoading, isInitialSearch, isProcessing, searchId]); // Removed searchStatus dependency
+    }, [isLoading, isInitialSearch, searchId]); // Only scroll for initial search, not enrichment
 
     // Unified Progress Side-Effect (Monotonic)
     useEffect(() => {
@@ -828,33 +829,36 @@ function LeadsApp() {
     }, [searchStatus, deliveryStatus, displayProgress, searchId]);
 
     const calculateProgress = (status: string) => {
-        // Ultimate goal: Lead delivery
+        // ONLY 100% when email is actually delivered
         if (deliveryStatus === 'sent') return 100;
 
-        // If it's a known ending state but not sent yet
-        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 99;
+        // Sending email phase -> stay at 95%
+        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 95;
 
-        // Enrichment progress (enriching_XX format) -> Map 95-99%
+        // Enrichment progress -> very slow crawl from 60% to 90%
         if (status.startsWith('enriching_')) {
             const pct = parseInt(status.split('_')[1]) || 0;
-            // Map 0-100 of enrichment to 95-99 of total progress
-            return Math.floor(95 + (pct * 0.04));
+            // Map 0-100 of enrichment to 60-90 of total progress (very slow)
+            return Math.floor(60 + (pct * 0.30));
         }
 
-        if (status === 'completed') return 95;
+        // Search completed, waiting for payment/enrichment
+        if (status === 'completed') return 55;
 
         // Base states
         if (status === 'error' || status === 'idle') return 0;
         if (status === 'geolocating') return 5;
 
-        // If we have a displayProgress (from initial search), use it -> Map 5-95%
-        // We ensure it starts at 5 (geolocating) and goes up to 95
+        // Verifying payment
+        if (status === 'verifying_payment') return 56;
+        if (status === 'processing_deep') return 58;
+
+        // Initial search progress -> Map 5-55%
         if (displayProgress > 0) {
-            return Math.max(5, Math.min(Math.floor(displayProgress), 95));
+            return Math.max(5, Math.min(Math.floor(displayProgress * 0.55), 55));
         }
 
         if (status === 'scraping') return 10;
-        if (status === 'processing_deep') return 15;
 
         return 0;
     };
@@ -1158,8 +1162,9 @@ function LeadsApp() {
                     {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
                         <div ref={progressSectionRef} className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
-                                <div className={`${(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
-                                    {(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? (
+                                <div className={`${isInitialSearch && searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle' ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
+                                    {/* Big animation hub ONLY during initial search (not enrichment/post-payment) */}
+                                    {isInitialSearch && searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle' ? (
                                         <div className="flex flex-col items-center w-full max-w-lg">
                                             {/* Immersive Animation Container */}
                                             <div className="relative h-72 w-full flex items-center justify-center mb-4 perspective-1000">
@@ -1178,7 +1183,7 @@ function LeadsApp() {
                                                     <div className="absolute inset-x-0 h-1 bg-blue-400/20 animate-scan z-30"></div>
                                                 </div>
 
-                                                {/* Flying Contact Icons (Preferred Animation) */}
+                                                {/* Flying Contact Icons */}
                                                 {[
                                                     { Icon: FaWhatsapp, color: 'text-green-500', delay: '0s', tx: '150px', ty: '-100px' },
                                                     { Icon: FaEnvelope, color: 'text-blue-400', delay: '0.8s', tx: '-140px', ty: '80px' },
@@ -1225,6 +1230,7 @@ function LeadsApp() {
                                             </div>
                                         </div>
                                     ) : (
+                                        /* Calm static label for enrichment/post-payment and completed states */
                                         <span className="text-lg font-bold text-blue-900 animate-pulse text-center px-4">
                                             {getSearchStatusLabel(searchStatus)}
                                         </span>
