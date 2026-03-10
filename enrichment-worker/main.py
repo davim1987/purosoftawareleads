@@ -29,7 +29,22 @@ CALLBACK_URL = os.getenv("CALLBACK_URL", "http://localhost:3000/api/enrichment/c
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
+# --- Startup diagnostics ---
+print("=" * 60)
+print("[Worker] STARTUP DIAGNOSTICS")
+print(f"[Worker] SUPABASE_URL = {'SET (' + SUPABASE_URL[:30] + '...)' if SUPABASE_URL else 'EMPTY/MISSING'}")
+print(f"[Worker] SUPABASE_SERVICE_ROLE_KEY = {'SET (' + SUPABASE_KEY[:20] + '...)' if SUPABASE_KEY else 'EMPTY/MISSING'}")
+print(f"[Worker] PY_WORKER_SECRET = {'SET' if PY_WORKER_SECRET else 'EMPTY/MISSING'}")
+print(f"[Worker] CALLBACK_URL = {CALLBACK_URL}")
+print(f"[Worker] BRAVE_API_KEY = {'SET' if os.getenv('BRAVE_API_KEY') else 'EMPTY/MISSING'}")
+print("=" * 60)
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+
+if supabase:
+    print("[Worker] ✅ Supabase client created successfully")
+else:
+    print("[Worker] ❌ Supabase client NOT created - SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is empty")
 
 
 def now_iso():
@@ -67,7 +82,15 @@ def verify_auth(authorization: str = Header(...)):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "supabase_configured": supabase is not None,
+        "supabase_url_set": bool(SUPABASE_URL),
+        "supabase_key_set": bool(SUPABASE_KEY),
+        "worker_secret_set": bool(PY_WORKER_SECRET),
+        "brave_key_set": bool(os.getenv("BRAVE_API_KEY")),
+        "callback_url": CALLBACK_URL,
+    }
 
 
 @app.post("/enrich", status_code=202)
