@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/db';
 
-const PY_WORKER_URL = process.env.PY_WORKER_URL || 'http://localhost:8000';
+const PY_WORKER_URL = (process.env.PY_WORKER_URL || 'http://localhost:8000').replace(/\/+$/, '');
 const PY_WORKER_SECRET = process.env.PY_WORKER_SECRET || '';
 const ENRICHMENT_BATCH_SIZE = Number(process.env.ENRICHMENT_BATCH_SIZE || 100);
 const ENRICHMENT_MAX_RETRIES = Number(process.env.ENRICHMENT_MAX_RETRIES || 3);
@@ -242,7 +242,9 @@ export async function startEnrichment(searchId: string): Promise<StartEnrichment
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Worker returned ${response.status}: ${errorText}`);
+            const fullError = `Worker returned ${response.status}: ${errorText}`;
+            console.error(`[Enrichment] ${fullError}`);
+            throw new Error(fullError);
         }
 
         // Update job to processing

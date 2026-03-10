@@ -100,7 +100,10 @@ export async function POST(req: NextRequest) {
                         enrichment_queue_error: result.message || 'unknown queue error'
                     }
                 });
-                return NextResponse.json({ status: 'enrichment_trigger_failed', message: result.message || 'Enrichment trigger failed' }, { status: 200 });
+                return NextResponse.json({
+                    status: 'enrichment_trigger_failed',
+                    message: result.message || 'Enrichment trigger failed'
+                }, { status: 200 });
             } catch (enrichError) {
                 console.error('[Payment Fallback] Enrichment trigger failed:', enrichError);
                 await upsertOrder({
