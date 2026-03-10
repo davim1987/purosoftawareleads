@@ -60,6 +60,7 @@ interface DeliverResult {
     deliveredCount?: number;
     downloadToken?: string;
     dryRun?: boolean;
+    resendId?: string;
     debug?: {
         selectedCount: number;
         filename: string;
@@ -72,6 +73,7 @@ interface ProviderSendResult {
     ok: boolean;
     provider: 'resend';
     error?: string;
+    resendId?: string;
 }
 
 interface EnrichmentData {
@@ -130,34 +132,50 @@ function toCsv(rows: EnrichedLeadRow[]) {
         'Horario'
     ];
 
-    const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const escapeCell = (value: string) => {
+        // Clean up common "empty" indicators from the DB to make the CSV look better
+        const cleanValue = (value || '').trim();
+        if (
+            cleanValue.toLowerCase() === 'no disponible' ||
+            cleanValue.toLowerCase() === 'n/a' ||
+            cleanValue === '-'
+        ) {
+            return '""';
+        }
+        return `"${cleanValue.replace(/"/g, '""')}"`;
+    };
 
     const body = rows.map((row) => {
-        const baseWhatsApp = readString(row, 'Whatssap', 'whatsapp');
-        const baseEmail = readString(row, 'Email', 'email');
-        const baseWeb = readString(row, 'Web', 'web');
+        const baseWhatsApp = readString(row, 'whatsapp');
+        const basePhone = readString(row, 'telefono', 'Telefono');
+        const baseEmail = readString(row, 'email', 'Email');
+        const baseWeb = readString(row, 'web', 'Web');
+        const baseIG = readString(row, 'instagram', 'Instagram');
+        const baseFB = readString(row, 'facebook', 'Facebook');
 
         const values = [
-            readString(row, 'Nombre', 'nombre'),
-            readString(row, 'Rubro', 'rubro'),
-            readString(row, 'Direccion', 'direccion'),
-            readString(row, 'Localidad', 'localidad'),
-            readString(row, 'Provincia', 'provincia'),
+            readString(row, 'nombre', 'Nombre'),
+            readString(row, 'rubro', 'Rubro'),
+            readString(row, 'direccion', 'Direccion'),
+            readString(row, 'localidad', 'Localidad'),
+            readString(row, 'provincia', 'Provincia'),
             row.enriched_whatsapp || baseWhatsApp,
-            row.enriched_phone || '',
+            row.enriched_phone || basePhone,
             row.enriched_email || baseEmail,
             row.enriched_email2 || '',
             row.enriched_website || baseWeb,
-            row.enriched_instagram || readString(row, 'instagram'),
-            row.enriched_facebook || readString(row, 'Facebook'),
+            row.enriched_instagram || baseIG,
+            row.enriched_facebook || baseFB,
             row.enriched_linkedin || '',
-            readString(row, 'Horario', 'horario', 'opening_hours')
+            readString(row, 'horario', 'Horario', 'opening_hours')
         ];
 
         return values.map(escapeCell).join(';');
     });
 
-    return `\uFEFF${headers.join(';')}\n${body.join('\n')}`;
+    // Added 'sep=;' so Excel detects the separator automatically in any region
+    const csvContent = `sep=;\n${headers.join(';')}\n${body.join('\n')}`;
+    return `\ufeff${csvContent}`;
 }
 
 async function setDeliveryState(searchId: string, deliveryStatus: DeliveryStatus, metadataPatch: Record<string, unknown>) {
@@ -227,19 +245,26 @@ async function sendByResend(to: string, subject: string, html: string, filename:
         console.error('[Delivery] Resend error:', errorMessage);
         return { ok: false, provider: 'resend', error: errorMessage };
     }
-    return { ok: true, provider: 'resend' };
+    const resendData = await response.json();
+    console.log('[Delivery] Resend success, message ID:', resendData.id);
+    return { ok: true, provider: 'resend', resendId: resendData.id };
 }
 
 /**
  * Fetch enrichment data (contacts + sources) for the given search_id,
  * grouped by business_id.
  */
-async function fetchEnrichmentData(searchId: string): Promise<Map<string, EnrichmentData>> {
+/**
+ * Fetch enrichment data (contacts + sources) for a list of business IDs,
+ * grouped by business_id.
+ */
+async function fetchEnrichmentDataByBusinessIds(businessIds: string[]): Promise<Map<string, EnrichmentData>> {
     const map = new Map<string, EnrichmentData>();
+    if (businessIds.length === 0) return map;
 
     const [contactsResult, sourcesResult] = await Promise.all([
-        supabase.from('lead_contacts').select('*').eq('search_id', searchId),
-        supabase.from('lead_sources').select('*').eq('search_id', searchId),
+        supabase.from('lead_contacts').select('*').in('business_id', businessIds),
+        supabase.from('lead_sources').select('*').in('business_id', businessIds),
     ]);
 
     const contacts = (contactsResult.data || []) as Array<{
@@ -363,7 +388,7 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     // 1) Primary attempt: rubro (lowercase column)
     {
         const result = await supabase
-            .from('leads_google_maps')
+            .from('leads_free_search')
             .select('*')
             .ilike('rubro', `%${order.rubro}%`)
             .limit(searchLimit);
@@ -374,7 +399,7 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     // 2) Fallback: rubro (capitalized column)
     if (!leadsError && leadsData.length === 0) {
         const result = await supabase
-            .from('leads_google_maps')
+            .from('leads_free_search')
             .select('*')
             .ilike('Rubro', `%${order.rubro}%`)
             .limit(searchLimit);
@@ -385,7 +410,7 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     // 3) Last resort: fetch broad sample and filter in code
     if (!leadsError && leadsData.length === 0) {
         const result = await supabase
-            .from('leads_google_maps')
+            .from('leads_free_search')
             .select('*')
             .limit(searchLimit);
         leadsData = (result.data || []) as LeadRow[];
@@ -401,7 +426,7 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     const normalizedLocalidades = localidades.map(normalizeText).filter(Boolean);
 
     const rubroMatchedLeads = leadsData.filter((lead) => {
-        const leadRubro = normalizeText(readString(lead, 'Rubro', 'rubro'));
+        const leadRubro = normalizeText(readString(lead, 'rubro', 'Rubro'));
         const rubroMatch =
             !normalizedRubro ||
             leadRubro.includes(normalizedRubro) ||
@@ -413,7 +438,7 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     const filteredLeads = rubroMatchedLeads.filter((lead) => {
         if (normalizedLocalidades.length === 0) return true;
 
-        const leadLocalidad = normalizeText(readString(lead, 'Localidad', 'localidad'));
+        const leadLocalidad = normalizeText(readString(lead, 'localidad', 'Localidad'));
         return normalizedLocalidades.some((loc) =>
             leadLocalidad === loc || leadLocalidad.includes(loc) || loc.includes(leadLocalidad)
         );
@@ -430,14 +455,33 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
 
     const uniqueMap = new Map<string, LeadRow>();
     for (const lead of candidateLeads) {
-        const key = readString(lead, 'id') || `${readString(lead, 'Nombre', 'nombre')}|${readString(lead, 'Localidad', 'localidad')}`;
+        // Use consistent separator '_' for fallback lead IDs
+        // Use consistent separator '_' for fallback lead IDs
+        const key = readString(lead, 'id') || `${readString(lead, 'nombre', 'Nombre')}_${readString(lead, 'localidad', 'Localidad')}`;
         if (!uniqueMap.has(key)) uniqueMap.set(key, lead);
     }
 
-    const selectedLeads = Array.from(uniqueMap.values()).slice(0, Math.max(1, order.quantity_paid));
+    // Sort leads to prioritize those with contact information
+    const allUniqueLeads = Array.from(uniqueMap.values());
+    const sortedLeads = allUniqueLeads.sort((a, b) => {
+        const scoreA = (readString(a, 'email', 'Email') ? 2 : 0) +
+            (readString(a, 'whatsapp', 'telefono', 'Telefono') ? 2 : 0) +
+            (readString(a, 'web', 'Web') ? 1 : 0) +
+            (readString(a, 'instagram', 'facebook', 'Facebook') ? 1 : 0);
 
-    // Fetch enrichment data and merge with base leads
-    const enrichmentMap = await fetchEnrichmentData(searchId);
+        const scoreB = (readString(b, 'email', 'Email') ? 2 : 0) +
+            (readString(b, 'whatsapp', 'telefono', 'Telefono') ? 2 : 0) +
+            (readString(b, 'web', 'Web') ? 1 : 0) +
+            (readString(b, 'instagram', 'facebook', 'Facebook') ? 1 : 0);
+
+        return scoreB - scoreA;
+    });
+
+    const selectedLeads = sortedLeads.slice(0, Math.max(1, order.quantity_paid));
+
+    // Fetch enrichment data globally by business IDs
+    const businessIds = selectedLeads.map(l => readString(l, 'id')).filter(Boolean);
+    const enrichmentMap = await fetchEnrichmentDataByBusinessIds(businessIds);
     const enrichedLeads: EnrichedLeadRow[] = selectedLeads.map((lead) => {
         const leadId = readString(lead, 'id') || `${readString(lead, 'Nombre', 'nombre')}_${readString(lead, 'Localidad', 'localidad')}`;
         return mergeLeadWithEnrichment(lead, enrichmentMap.get(leadId));
@@ -483,7 +527,9 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
         };
     }
 
+    console.log(`[Delivery] Sending email to: ${order.email} using Resend...`);
     const resendResult = await sendByResend(order.email, subject, html, filename, base64Csv);
+    console.log(`[Delivery] Resend result:`, JSON.stringify(resendResult));
 
     if (!resendResult.ok) {
         console.error('[Delivery] Resend failed, CSV still available for direct download');
@@ -526,5 +572,5 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
         download_token: downloadToken,
     });
 
-    return { ok: true, message: 'Delivered successfully', deliveredCount: enrichedLeads.length, downloadToken };
+    return { ok: true, message: 'Delivered successfully', deliveredCount: enrichedLeads.length, downloadToken, resendId: resendResult.resendId };
 }

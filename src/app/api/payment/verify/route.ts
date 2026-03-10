@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
                 const result = await startEnrichment(finalSearchId);
                 console.log(`[Payment Fallback] Enrichment: jobId=${result.jobId}, ok=${result.ok}, skipped=${result.skipped || false}`);
 
-                if (!result.ok && result.message === 'No businesses found for enrichment') {
+                if (!result.ok && (result.message === 'No businesses found for enrichment' || result.message === 'No businesses found (already enriched in source)')) {
                     console.log('[Payment Fallback] No businesses for enrichment, triggering direct delivery');
                     const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
                     await deliverOrderBySearchId(finalSearchId);

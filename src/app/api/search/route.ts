@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { supabase } from '@/lib/db';
 import axios from 'axios';
 import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
@@ -138,7 +139,8 @@ export async function POST(req: NextRequest) {
                     id: searchId,
                     status: `Geolocalizando ${validLocs.length} zonas...`,
                     rubro,
-                    localidad: validLocs.join(', ')
+                    localidad: validLocs.join(', '),
+                    provincia: provincia || 'Buenos Aires'
                 });
 
                 // 2. Launch Jobs and store IDs (No more background polling here!)
@@ -151,10 +153,10 @@ export async function POST(req: NextRequest) {
                         zoom: 14,
                         lat: coords.lat.toString(),
                         lon: coords.lon.toString(),
-                        fast_mode: true,
+                        fast_mode: false,
                         radius: 5000,
-                        depth: 2,
-                        max_time: 400
+                        depth: 5,
+                        max_time: 3600
                     };
                     return axios.post(`${botBaseUrl}/api/v1/jobs`, payload, { httpsAgent });
                 });
@@ -187,8 +189,8 @@ export async function POST(req: NextRequest) {
         // Case: Leads found in DB
         const getQualityScore = (lead: RawDbRow) => {
             let score = 0;
-            if (readString(lead, 'Email', 'email')) score += 10;
-            if (readString(lead, 'Whatssap', 'whatsapp')) score += 10;
+            if (readString(lead, 'email', 'Email')) score += 10;
+            if (readString(lead, 'whatsapp')) score += 10;
             if (readString(lead, 'instagram')) score += 5;
             return score;
         };
@@ -197,17 +199,17 @@ export async function POST(req: NextRequest) {
         const mappedLeads: LeadResponse[] = leads.map((lead) => {
             const mapped: LeadResponse = {
                 id: readString(lead, 'id') || `p-${Math.random()}`,
-                nombre: readString(lead, 'Nombre', 'nombre') || 'Nombre Reservado',
-                rubro: readString(lead, 'Rubro', 'rubro') || rubro,
-                direccion: readString(lead, 'Direccion', 'direccion') || 'No disponible',
-                localidad: readString(lead, 'Localidad', 'localidad') || '',
-                provincia: readString(lead, 'Provincia', 'provincia') || (provincia || ''),
-                email: readString(lead, 'Email', 'email'),
-                whatsapp: readString(lead, 'Whatssap', 'whatsapp'),
-                web: readString(lead, 'Web', 'web'),
+                nombre: readString(lead, 'nombre', 'Nombre') || 'Nombre Reservado',
+                rubro: readString(lead, 'rubro', 'Rubro') || rubro,
+                direccion: readString(lead, 'direccion', 'Direccion') || 'No disponible',
+                localidad: readString(lead, 'localidad', 'Localidad') || '',
+                provincia: readString(lead, 'provincia', 'Provincia') || (provincia || ''),
+                email: readString(lead, 'email', 'Email'),
+                whatsapp: readString(lead, 'whatsapp'),
+                web: readString(lead, 'web', 'Web'),
                 instagram: readString(lead, 'instagram'),
-                facebook: readString(lead, 'Facebook'),
-                horario: readString(lead, 'Horario', 'horario', 'opening_hours')
+                facebook: readString(lead, 'facebook', 'Facebook'),
+                horario: readString(lead, 'horario', 'Horario', 'opening_hours')
             };
 
             // Enhance socials for DB leads if missing

@@ -43,6 +43,7 @@ class Business(BaseModel):
     name: str
     locality: str
     provincia: Optional[str] = None
+    rubro: Optional[str] = None
     existing_website: Optional[str] = None
     existing_phone: Optional[str] = None
     existing_email: Optional[str] = None
@@ -83,29 +84,40 @@ async def enrich(
 # --- Background Processing ---
 
 async def process_enrichment(request: EnrichRequest):
-    """Main enrichment loop: Brave search + scrape + normalize + store + callback."""
+    """Main enrichment loop with parallel processing (Semaphore)."""
     job_id = request.job_id
     search_id = request.search_id
     total = len(request.businesses)
     processed = 0
+    
+    # Use a semaphore to limit concurrency (e.g., 5 businesses at a time)
+    semaphore = asyncio.Semaphore(5)
+    
+    print(f"[Worker] Starting enrichment job {job_id} for search {search_id} ({total} businesses) [PARALLEL MODE]")
 
-    print(f"[Worker] Starting enrichment job {job_id} for search {search_id} ({total} businesses)")
-
-    try:
-        for business in request.businesses:
+    async def enriched_wrapped(business: Business):
+        nonlocal processed
+        async with semaphore:
             try:
                 await enrich_single_business(search_id, business)
             except Exception as e:
                 print(f"[Worker] Error enriching business '{business.name}': {e}")
                 traceback.print_exc()
+            finally:
+                processed += 1
+                # Update progress in DB (throttle or use a lock if needed, but for 5 concurrent it's fine)
+                if supabase:
+                    try:
+                        supabase.table("enrichment_jobs").update({
+                            "processed_businesses": processed,
+                        }).eq("id", job_id).execute()
+                    except Exception as db_err:
+                        print(f"[Worker] DB Progress Error: {db_err}")
 
-            processed += 1
-
-            # Update progress in DB
-            if supabase:
-                supabase.table("enrichment_jobs").update({
-                    "processed_businesses": processed,
-                }).eq("id", job_id).execute()
+    try:
+        # Run businesses concurrently
+        tasks = [enriched_wrapped(b) for b in request.businesses]
+        await asyncio.gather(*tasks)
 
         # Mark job as done
         if supabase:
@@ -141,8 +153,24 @@ async def enrich_single_business(search_id: str, business: Business):
         print("[Worker] No Supabase client configured, skipping DB operations")
         return
 
+    print(
+        f"[Worker] Enriching business='{business.name}' locality='{business.locality}' "
+        f"provincia='{business.provincia or ''}' rubro='{business.rubro or ''}'"
+    )
+
     # 1. Search Brave for website + social media URLs
-    brave_results = await search_business(business.name, business.locality)
+    brave_results = await search_business(
+        business.name,
+        business.locality,
+        business.provincia,
+        business.rubro,
+        business.existing_website,
+    )
+    print(
+        f"[Worker] Brave results for business='{business.name}': "
+        f"website={'yes' if brave_results['website'] else 'no'}, "
+        f"social={len(brave_results['social_urls'])}, all_urls={len(brave_results['all_urls'])}"
+    )
 
     urls_to_scrape = []
 
@@ -202,7 +230,7 @@ async def enrich_single_business(search_id: str, business: Business):
 
 
 def _store_source(search_id: str, business_id: str, source_type: str, url: str):
-    """Store a lead source URL in the database."""
+    """Store a lead source URL and update leads_free_search."""
     if not supabase:
         return
     try:
@@ -214,6 +242,19 @@ def _store_source(search_id: str, business_id: str, source_type: str, url: str):
             "url": url,
             "domain": domain,
         }).execute()
+
+        # Back-fill leads_free_search
+        update_data = {}
+        if source_type == "website":
+            update_data["web"] = url
+        elif source_type == "instagram":
+            update_data["instagram"] = url
+        elif source_type == "facebook":
+            update_data["facebook"] = url
+
+        if update_data:
+            supabase.table("leads_free_search").update(update_data).eq("id", business_id).execute()
+
     except Exception as e:
         print(f"[Worker] Error storing source: {e}")
 
@@ -228,7 +269,7 @@ def _store_contact(
     confidence: float,
     source_url: str,
 ):
-    """Store a lead contact in the database. ON CONFLICT DO NOTHING for idempotency."""
+    """Store a lead contact and back-fill leads_free_search."""
     if not supabase:
         return
     try:
@@ -244,8 +285,22 @@ def _store_contact(
                 "source_url": source_url,
             },
             on_conflict="business_id,contact_type,normalized_value",
-            ignore_duplicates=True,
         ).execute()
+
+        # Back-fill leads_free_search table
+        if is_valid and confidence >= 0.7:
+            update_data = {}
+            if contact_type == "email":
+                update_data["email"] = normalized_value
+            elif contact_type == "whatsapp":
+                update_data["whatsapp"] = normalized_value
+            elif contact_type == "phone":
+                # Only update if Whatssap is empty or if we want to store it in a phone column
+                update_data["whatsapp"] = normalized_value
+
+            if update_data:
+                supabase.table("leads_free_search").update(update_data).eq("id", business_id).execute()
+
     except Exception as e:
         print(f"[Worker] Error storing contact: {e}")
 

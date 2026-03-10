@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { supabase } from '@/lib/db';
 import { checkBotAndUpdateStatus } from '@/lib/search-utils';
 
@@ -18,8 +19,19 @@ export async function GET(req: NextRequest) {
             .single();
 
         if (initialError || !initialData) {
+            if (initialError) console.error('[Status API] Database error for searchId:', searchId, initialError);
+            else console.log('[Status API] Search record not found for searchId:', searchId);
             return NextResponse.json({ status: 'not_found' });
         }
+
+        // Try to fetch order status separately for better resilience
+        const { data: orderData } = await supabase
+            .from('orders')
+            .select('delivery_status')
+            .eq('search_id', searchId)
+            .maybeSingle();
+
+        const deliveryStatus = orderData?.delivery_status || 'pending';
 
         // Active Polling: If not completed/error, check the bot and update
         let currentData = initialData;
@@ -35,7 +47,8 @@ export async function GET(req: NextRequest) {
             count: currentData.total_leads,
             bot_job_id: currentData.bot_job_id,
             rubro: currentData.rubro,
-            localidades: currentData.localidad ? currentData.localidad.split(', ') : []
+            localidades: currentData.localidad ? currentData.localidad.split(', ') : [],
+            deliveryStatus
         });
 
     } catch (error) {

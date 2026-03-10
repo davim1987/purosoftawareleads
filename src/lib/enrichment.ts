@@ -2,7 +2,7 @@ import { supabase } from '@/lib/db';
 
 const PY_WORKER_URL = process.env.PY_WORKER_URL || 'http://localhost:8000';
 const PY_WORKER_SECRET = process.env.PY_WORKER_SECRET || '';
-const ENRICHMENT_BATCH_SIZE = Number(process.env.ENRICHMENT_BATCH_SIZE || 20);
+const ENRICHMENT_BATCH_SIZE = Number(process.env.ENRICHMENT_BATCH_SIZE || 100);
 const ENRICHMENT_MAX_RETRIES = Number(process.env.ENRICHMENT_MAX_RETRIES || 3);
 
 interface Business {
@@ -10,6 +10,7 @@ interface Business {
     name: string;
     locality: string;
     provincia: string | null;
+    rubro: string | null;
     existing_website: string | null;
     existing_phone: string | null;
     existing_email: string | null;
@@ -98,7 +99,7 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
 
     // Primary: lowercase rubro column
     let { data: leadsData, error } = await supabase
-        .from('leads_google_maps')
+        .from('leads_free_search')
         .select('*')
         .ilike('rubro', `%${rubro}%`)
         .limit(searchLimit);
@@ -106,7 +107,7 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
     // Fallback: capitalized Rubro column
     if (!error && (!leadsData || leadsData.length === 0)) {
         const result = await supabase
-            .from('leads_google_maps')
+            .from('leads_free_search')
             .select('*')
             .ilike('Rubro', `%${rubro}%`)
             .limit(searchLimit);
@@ -131,11 +132,21 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
 
     const candidates = filtered.length > 0 ? filtered : leadsData;
 
-    // Deduplicate
     const uniqueMap = new Map<string, Record<string, unknown>>();
     for (const lead of candidates) {
         const rec = lead as Record<string, unknown>;
         const key = readString(rec, 'id') || `${readString(rec, 'Nombre', 'nombre')}|${readString(rec, 'Localidad', 'localidad')}`;
+
+        // SKIP logic: if it already has an email, phone AND some social, we consider it "enriched enough"
+        const hasEmail = !!readString(rec, 'email', 'Email');
+        const hasPhone = !!readString(rec, 'whatsapp', 'telefono', 'Telefono');
+        const hasSocial = !!(readString(rec, 'instagram') || readString(rec, 'facebook', 'Facebook'));
+
+        if (hasEmail && hasPhone && hasSocial) {
+            console.log(`[Consolidation] Lead "${readString(rec, 'Nombre', 'nombre')}" skipped (already has email, phone, and social).`);
+            continue;
+        }
+
         if (!uniqueMap.has(key)) uniqueMap.set(key, rec);
     }
 
@@ -146,9 +157,10 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         name: readString(lead, 'Nombre', 'nombre'),
         locality: readString(lead, 'Localidad', 'localidad'),
         provincia: readString(lead, 'Provincia', 'provincia') || null,
-        existing_website: readString(lead, 'Web', 'web') || null,
-        existing_phone: readString(lead, 'Whatssap', 'whatsapp') || null,
-        existing_email: readString(lead, 'Email', 'email') || null,
+        rubro: rubro || null,
+        existing_website: readString(lead, 'web', 'Web') || null,
+        existing_phone: readString(lead, 'whatsapp') || null,
+        existing_email: readString(lead, 'email', 'Email') || null,
     }));
 }
 
@@ -187,8 +199,8 @@ export async function startEnrichment(searchId: string): Promise<StartEnrichment
     const businesses = await fetchBusinessesForEnrichment(searchId);
 
     if (businesses.length === 0) {
-        console.log(`[Enrichment] No businesses to enrich for searchId=${searchId}`);
-        return { jobId: 0, ok: false, message: 'No businesses found for enrichment' };
+        console.log(`[Enrichment] All leads for searchId=${searchId} are already enriched in leads_free_search. skipping worker.`);
+        return { jobId: 0, ok: false, message: 'No businesses found (already enriched in source)' };
     }
 
     // Create job record

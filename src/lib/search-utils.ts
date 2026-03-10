@@ -2,6 +2,19 @@ import { supabase } from '@/lib/db';
 import axios from 'axios';
 import https from 'https';
 import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
+import fs from 'fs';
+import path from 'path';
+
+async function logDebug(msg: string, searchId: string) {
+    try {
+        const { data: current } = await supabase.from('search_tracking').select('error_message').eq('id', searchId).single();
+        const oldMsg = current?.error_message || '';
+        const newMsg = `${oldMsg}\n${new Date().toISOString()} - ${msg}`.substring(0, 5000); // Guard limit
+        await supabase.from('search_tracking').update({ error_message: newMsg }).eq('id', searchId);
+    } catch (e) {
+        console.error('Debug log error:', e);
+    }
+}
 
 type CsvValue = string | null;
 type CsvRow = Record<string, CsvValue>;
@@ -26,6 +39,7 @@ interface SearchTrackingRow {
     rubro: string;
     localidad: string | null;
     bot_job_id: string | null;
+    provincia?: string | null;
     total_leads?: number | null;
     results?: SearchLead[] | null;
     error_message?: string | null;
@@ -46,8 +60,18 @@ export function parseCSV(csvText: string): CsvRow[] {
     if (lines.length < 2) return [];
 
     // Detect separator (auto-comma or semi-colon)
-    const firstLine = lines[0];
-    const separator = firstLine.includes(';') && (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+    let firstLine = lines[0];
+    let startIdx = 1;
+    let separator = ',';
+
+    // Handle Excel "sep=;" or "sep=," hint
+    if (firstLine.toLowerCase().startsWith('sep=')) {
+        separator = firstLine.split('=')[1]?.trim() || ',';
+        firstLine = lines[1];
+        startIdx = 2;
+    } else {
+        separator = firstLine.includes(';') && (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+    }
 
     const splitCSVLine = (line: string) => {
         const result: string[] = [];
@@ -68,9 +92,10 @@ export function parseCSV(csvText: string): CsvRow[] {
         return result;
     };
 
-    const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+    const headers = splitCSVLine(firstLine).map(h => h.toLowerCase().trim());
+    if (headers.length === 0) return [];
 
-    return lines.slice(1).map((line: string) => {
+    return lines.slice(startIdx).map((line: string) => {
         const values = splitCSVLine(line);
         const obj: CsvRow = {};
         headers.forEach((header: string, i: number) => {
@@ -175,6 +200,7 @@ export async function getGeolocation(localidad: string, provincia: string) {
  */
 export async function checkBotAndUpdateStatus(searchId: string) {
     try {
+        await logDebug(`Checking status for searchId: ${searchId}`, searchId);
         const { data: trackingData, error: fetchError } = await supabase
             .from('search_tracking')
             .select('*')
@@ -182,16 +208,25 @@ export async function checkBotAndUpdateStatus(searchId: string) {
             .single();
 
         const tracking = trackingData as SearchTrackingRow | null;
-        if (fetchError || !tracking) return null;
+        if (fetchError || !tracking) {
+            await logDebug(`Fetch error or no tracking found for ${searchId}: ${fetchError?.message}`, searchId);
+            return null;
+        }
 
         // Skip if already completed or error
-        if (tracking.status === 'completed' || tracking.status === 'error') return tracking;
+        if (tracking.status === 'completed' || tracking.status === 'error') {
+            await logDebug(`Search ${searchId} already finished with status: ${tracking.status}`, searchId);
+            return tracking;
+        }
 
         const botJobIds = tracking.bot_job_id ? tracking.bot_job_id.split(',').map((id: string) => id.trim()) : [];
+        await logDebug(`Found ${botJobIds.length} job IDs for ${searchId}: ${botJobIds.join(', ')}`, searchId);
+
         if (botJobIds.length === 0) return tracking;
 
         const validLocs = tracking.localidad ? tracking.localidad.split(',').map((l: string) => l.trim()) : [];
         const rubro = tracking.rubro;
+        const currentProvince = tracking.provincia || 'Buenos Aires';
 
         const aggregatedLeads: SearchLead[] = [];
         let completedCount = 0;
@@ -208,60 +243,169 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                 });
 
                 const jobStatus = (statusResponse.data.Status || statusResponse.data.status || 'pending').toLowerCase();
+                await logDebug(`Job ${jobId} status: ${jobStatus}`, searchId);
 
                 if (['ok', 'completed', 'success', 'finished', 'done'].includes(jobStatus)) {
                     // Download results
                     const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}/download`, { httpsAgent });
                     const partLeads = parseCSV(csvResponse.data);
+                    await logDebug(`Downloaded ${partLeads.length} leads for job ${jobId}`, searchId);
 
-                    partLeads.forEach((l) => {
-                        let mail = l.extended_emails || l.email || l['email address'] || l.emails;
-                        if (!mail && l.emails) mail = l.emails.split(',')[0] || 'No disponible';
+                    // DEBUG: Log headers to tracking
+                    if (partLeads.length > 0) {
+                        const headers = Object.keys(partLeads[0]);
+                        await logDebug(`Job ${jobId} headers: ${headers.join(', ')}`, searchId);
+                    }
 
-                        const leadObj: SearchLead = {
-                            id: l.place_id || l.id || l.cid || `lead-${Math.random().toString(36).substring(7)}`,
-                            nombre: l.title || l.name || l['business name'] || 'Nombre Reservado',
-                            whatsapp: l.phone || l.whatsapp || l['phone number'] || l.phone_number || null,
-                            web: l.website || l.web || l['website url'] || l.url || null,
-                            email: mail || 'No disponible',
-                            direccion: l.address || l.complete_address || l['full address'] || l.formatted_address || 'No disponible',
-                            localidad: l.city || l.sublocality || currentLoc,
-                            rubro: l.category || l.type || rubro,
-                            instagram: l.instagram || l['instagram handle'] || 'No disponible',
-                            facebook: l.facebook || l['facebook page'] || 'No disponible',
-                            horario: l.opening_hours || l.hours || l['business hours'] || 'No disponible'
-                        };
+                    // Helper for column mapping
+                    const findValue = (row: CsvRow, ...altKeys: string[]) => {
+                        for (const k of altKeys) {
+                            if (row[k] && String(row[k]).trim() !== '' && String(row[k]).toLowerCase() !== 'no disponible' && String(row[k]).toLowerCase() !== 'null') {
+                                return String(row[k]).trim();
+                            }
+                        }
+                        return null;
+                    };
+
+                    const jobLeadsToInsert = partLeads.map(l => {
+                        const pid = l.place_id || l.placeId || l.cid || l.id;
+                        const isInternal = !pid || String(pid).startsWith('lead-');
+
+                        const mail = findValue(l, 'extended_emails', 'email', 'emails', 'email address', 'e-mail');
+                        const phone = findValue(l, 'phone', 'whatsapp', 'phone number', 'phone_number', 'telefono', 'tel');
+                        const website = findValue(l, 'website', 'web', 'website url', 'url', 'site');
+                        const instagram = findValue(l, 'instagram', 'instagram handle', 'ig');
+                        const facebook = findValue(l, 'facebook', 'facebook page', 'fb');
 
                         const searchFields = [l.website, l.web, l.webcity, l.emails, l.extended_emails, l.description].filter(Boolean);
-                        if (leadObj.instagram === 'No disponible') {
+                        let ig = instagram || 'No disponible';
+                        let fb = facebook || 'No disponible';
+
+                        if (ig === 'No disponible') {
                             for (const f of searchFields) {
                                 const h = extractSocialHandle(f, 'instagram');
-                                if (h) { leadObj.instagram = h; break; }
+                                if (h) { ig = h; break; }
                             }
                         }
-                        if (leadObj.facebook === 'No disponible') {
+                        if (fb === 'No disponible') {
                             for (const f of searchFields) {
                                 const h = extractSocialHandle(f, 'facebook');
-                                if (h) { leadObj.facebook = h; break; }
+                                if (h) { fb = h; break; }
                             }
                         }
+
+                        const tempId = `temp-${Math.random().toString(36).substring(2, 11)}`;
+                        const leadObj: SearchLead = {
+                            id: isInternal ? tempId : String(pid),
+                            nombre: findValue(l, 'title', 'name', 'business name', 'nombre') || 'Nombre Reservado',
+                            whatsapp: phone,
+                            web: website,
+                            email: mail || 'No disponible',
+                            direccion: findValue(l, 'address', 'complete_address', 'full address', 'formatted_address', 'direccion') || 'No disponible',
+                            localidad: findValue(l, 'city', 'sublocality', 'neighborhood', 'localidad') || currentLoc,
+                            rubro: findValue(l, 'category', 'type', 'rubro', 'sub_category') || rubro,
+                            instagram: ig,
+                            facebook: fb,
+                            horario: findValue(l, 'opening_hours', 'hours', 'business hours', 'horario') || 'No disponible'
+                        };
+
                         aggregatedLeads.push(leadObj);
+
+                        return {
+                            place_id: isInternal ? null : String(pid),
+                            nombre: leadObj.nombre,
+                            rubro: leadObj.rubro,
+                            direccion: leadObj.direccion,
+                            localidad: leadObj.localidad,
+                            provincia: currentProvince, // Added this
+                            whatsapp: leadObj.whatsapp,
+                            email: leadObj.email === 'No disponible' ? null : leadObj.email,
+                            web: leadObj.web,
+                            instagram: leadObj.instagram === 'No disponible' ? null : leadObj.instagram,
+                            facebook: leadObj.facebook === 'No disponible' ? null : leadObj.facebook,
+                            updated_at: new Date().toISOString()
+                        };
                     });
+
+                    // INCREMENTAL PERSISTENCE
+                    if (jobLeadsToInsert.length > 0) {
+                        try {
+                            await logDebug(`Starting incremental persistence for ${jobLeadsToInsert.length} leads in job ${jobId}`, searchId);
+                            const pIds = jobLeadsToInsert.map(l => l.place_id).filter(Boolean) as string[];
+                            const { data: existing } = await supabase
+                                .from('leads_free_search')
+                                .select('id, place_id, email, whatsapp, web, instagram, facebook')
+                                .in('place_id', pIds);
+
+                            const existingMap = new Map(existing?.map(l => [l.place_id, l]));
+
+                            const protectedLeads = jobLeadsToInsert.map(newLead => {
+                                const exist = newLead.place_id ? existingMap.get(newLead.place_id) : null;
+                                if (!exist) return newLead;
+
+                                const isAv = (val: any) => val && String(val).toLowerCase() !== 'no disponible' && String(val).toLowerCase() !== 'null';
+                                return {
+                                    ...newLead,
+                                    id: exist.id, // Match with existing DB ID
+                                    email: isAv(newLead.email) ? newLead.email : (exist.email || newLead.email),
+                                    whatsapp: isAv(newLead.whatsapp) ? newLead.whatsapp : (exist.whatsapp || newLead.whatsapp),
+                                    web: isAv(newLead.web) ? newLead.web : (exist.web || newLead.web),
+                                    instagram: isAv(newLead.instagram) ? newLead.instagram : (exist.instagram || newLead.instagram),
+                                    facebook: isAv(newLead.facebook) ? newLead.facebook : (exist.facebook || newLead.facebook),
+                                };
+                            });
+
+                            // Split into leads with place_id and leads without (internal)
+                            const withPlaceId = protectedLeads.filter(l => l.place_id);
+                            const withoutPlaceId = protectedLeads.filter(l => !l.place_id);
+
+                            if (withPlaceId.length > 0) {
+                                const { error: upsertError } = await supabase
+                                    .from('leads_free_search')
+                                    .upsert(withPlaceId, { onConflict: 'place_id' });
+
+                                if (upsertError) {
+                                    await logDebug(`[Incremental] Upsert Error (PlaceId): ${JSON.stringify(upsertError)}`, searchId);
+                                    console.error(`[Incremental] Upsert Error for job ${jobId}:`, upsertError);
+                                } else {
+                                    await logDebug(`[Incremental] Upserted ${withPlaceId.length} leads by place_id`, searchId);
+                                }
+                            }
+
+                            if (withoutPlaceId.length > 0) {
+                                const { error: insertError } = await supabase
+                                    .from('leads_free_search')
+                                    .insert(withoutPlaceId);
+
+                                if (insertError) {
+                                    await logDebug(`[Incremental] Insert Error (Internal): ${JSON.stringify(insertError)}`, searchId);
+                                    console.error(`[Incremental] Insert Error for job ${jobId}:`, insertError);
+                                } else {
+                                    await logDebug(`[Incremental] Inserted ${withoutPlaceId.length} internal leads`, searchId);
+                                }
+                            }
+                        } catch (upsertErr: any) {
+                            await logDebug(`[Incremental] Fatal error for job ${jobId}: ${upsertErr.message}`, searchId);
+                            console.error(`[Incremental] Fatal error for job ${jobId}:`, upsertErr);
+                        }
+                    }
                     completedCount++;
                 } else if (['failed', 'finished', 'done', 'error'].includes(jobStatus)) {
-                    completedCount++; // Mark as finished even if failed to continue
+                    await logDebug(`Job ${jobId} finished with fail status.`, searchId);
+                    completedCount++;
                 } else {
+                    await logDebug(`Job ${jobId} still running.`, searchId);
                     anyRunning = true;
                 }
-            } catch (jobErr) {
+            } catch (jobErr: any) {
+                await logDebug(`Error checking job ${jobId}: ${jobErr.message}`, searchId);
                 console.error(`Error checking job ${jobId}:`, jobErr);
-                anyRunning = true; // Assume running if check fails to be safe
+                anyRunning = true;
             }
         }
 
-        // Update DB based on findings
+        // Finalize search_tracking
         if (!anyRunning && completedCount === botJobIds.length) {
-            // Finalize
             if (aggregatedLeads.length > 0) {
                 const getScore = (l: SearchLead) => {
                     let s = 0;
@@ -297,7 +441,6 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                 return updated;
             }
         } else {
-            // Still processing
             const newStatus = `Procesando (${completedCount}/${botJobIds.length})...`;
             if (tracking.status !== newStatus) {
                 await supabase.from('search_tracking').update({ status: newStatus }).eq('id', searchId);
