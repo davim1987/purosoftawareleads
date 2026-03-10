@@ -20,47 +20,55 @@ export async function POST(req: NextRequest) {
 
         // Generate searchId server-side if not provided
         const finalSearchId = searchId || `SEARCH-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
         const preference = new Preference(client);
-        const qty = Number(quantity) || 1;
-        const totalAmount = Number(amount);
-        const unitPrice = totalAmount / qty;
 
-        const result = await preference.create({
-            body: {
-                items: [
-                    {
-                        id: 'lead-purchase',
-                        title: 'Compra de Leads',
-                        quantity: qty,
-                        unit_price: unitPrice,
-                        currency_id: 'ARS', // Adjustable based on region
-                    },
-                ],
-                payer: {
-                    email: clientEmail || 'comprador@purosoftware.com',
-                    phone: {
-                        number: clientPhone
-                    }
+        const qty = Math.max(1, Number(quantity) || 1);
+        const totalAmount = Number(amount);
+        // Round to 2 decimals to avoid floating point issues in MP
+        const unitPrice = Math.round((totalAmount / qty) * 100) / 100;
+
+        // More robust phone handling: skip if it's just the prefix or empty
+        const cleanPhone = clientPhone?.replace(/\D/g, '') || '';
+        const hasValidPhone = cleanPhone.length >= 8; // Basic check for AR numbers
+
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
+        const preferenceBody = {
+            items: [
+                {
+                    id: 'lead-purchase',
+                    title: `Compra de ${qty} leads - ${rubro || 'General'}`,
+                    quantity: qty,
+                    unit_price: unitPrice,
+                    currency_id: 'ARS',
                 },
-                back_urls: {
-                    success: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/?searchId=${finalSearchId}&payment=success`,
-                    failure: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/?searchId=${finalSearchId}&payment=failure`,
-                    pending: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/?searchId=${finalSearchId}&payment=pending`,
-                },
-                auto_return: 'approved',
-                external_reference: finalSearchId,
-                metadata: {
-                    client_phone: clientPhone,
-                    client_email: clientEmail,
-                    quantity: Number(quantity),
-                    rubro: rubro,
-                    provincia: provincia,
-                    localidades: Array.isArray(localidades) ? localidades.join(', ') : localidades,
-                    coords: coords ? JSON.stringify(coords) : null
-                }
+            ],
+            payer: {
+                email: clientEmail || 'comprador@purosoftware.com',
+                ...(hasValidPhone ? { phone: { number: clientPhone } } : {})
+            },
+            back_urls: {
+                success: `${baseUrl}/?searchId=${finalSearchId}&payment=success`,
+                failure: `${baseUrl}/?searchId=${finalSearchId}&payment=failure`,
+                pending: `${baseUrl}/?searchId=${finalSearchId}&payment=pending`,
+            },
+            auto_return: 'approved',
+            notification_url: process.env.MP_WEBHOOK_URL,
+            external_reference: finalSearchId,
+            metadata: {
+                client_phone: clientPhone,
+                client_email: clientEmail,
+                quantity: qty,
+                rubro: rubro,
+                provincia: provincia,
+                localidades: Array.isArray(localidades) ? localidades.join(', ') : localidades,
+                coords: coords ? JSON.stringify(coords) : null
             }
-        });
+        };
+
+        console.log('[MercadoPago] Creating preference with body:', JSON.stringify(preferenceBody, null, 2));
+
+        const result = await preference.create({ body: preferenceBody });
 
         await upsertOrder({
             searchId: finalSearchId,
@@ -85,8 +93,18 @@ export async function POST(req: NextRequest) {
             init_point: result.init_point
         });
 
-    } catch (error) {
-        console.error('Error creating preference:', error);
-        return NextResponse.json({ error: 'Error creating preference' }, { status: 500 });
+    } catch (error: any) {
+        // Log the full error to the server console for better debugging
+        console.error('Error creating Mercado Pago preference:', error?.message || error);
+        if (error?.cause) console.error('Error cause:', error.cause);
+
+        const errorMessage = error?.message?.includes('item.unit_price')
+            ? 'Error en el precio de los leads'
+            : 'Error al crear la preferencia de pago';
+
+        return NextResponse.json({
+            error: errorMessage,
+            details: error?.message || 'Unknown error'
+        }, { status: 500 });
     }
 }
