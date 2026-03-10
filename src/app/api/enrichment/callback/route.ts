@@ -39,20 +39,8 @@ export async function POST(req: NextRequest) {
                 .eq('id', job_id);
         }
 
-        // Update search_tracking to 'completed_deep' (frontend compatibility)
-        const { error: trackingError } = await supabase
-            .from('search_tracking')
-            .update({
-                status: status === 'done' ? 'completed_deep' : 'failed',
-                error_message: status === 'done'
-                    ? '¡Listo! Los leads fueron enriquecidos y enviados 🚀'
-                    : (errorMsg || 'Enrichment failed'),
-            })
-            .eq('id', search_id);
-
-        if (trackingError) {
-            console.error('[Enrichment Callback] DB Update Error:', trackingError);
-        }
+        // Only update `enrichment_jobs` first. We defer updating `search_tracking` 
+        // to 'completed_deep' until AFTER email delivery is completely triggered.
 
         // Update order status
         await upsertOrder({
@@ -72,20 +60,36 @@ export async function POST(req: NextRequest) {
             const deliveryResult = await deliverOrderBySearchId(search_id);
             if (!deliveryResult.ok) {
                 console.error('[Enrichment Callback] Delivery failed:', deliveryResult.message);
+
+                // Set to error so frontend knows delivery failed
+                await supabase
+                    .from('search_tracking')
+                    .update({
+                        status: 'error',
+                        error_message: `Error enviando email: ${deliveryResult.message}`,
+                    })
+                    .eq('id', search_id);
             } else {
                 console.log(`[Enrichment Callback] Delivery succeeded: ${deliveryResult.deliveredCount} leads`);
 
-                // Update search_tracking with download token if available
-                if (deliveryResult.downloadToken) {
-                    await supabase
-                        .from('search_tracking')
-                        .update({
-                            status: 'completed_deep',
-                            error_message: '¡Listo! Los leads fueron enriquecidos y enviados 🚀',
-                        })
-                        .eq('id', search_id);
-                }
+                // ONLY update search_tracking to completed_deep AFTER delivery is successful
+                await supabase
+                    .from('search_tracking')
+                    .update({
+                        status: 'completed_deep',
+                        error_message: '¡Listo! Los leads fueron enriquecidos y enviados 🚀',
+                    })
+                    .eq('id', search_id);
             }
+        } else {
+            // Enrichment failed - mark search as error
+            await supabase
+                .from('search_tracking')
+                .update({
+                    status: 'error',
+                    error_message: errorMsg || 'Enrichment failed',
+                })
+                .eq('id', search_id);
         }
 
         return NextResponse.json({
