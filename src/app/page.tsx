@@ -43,7 +43,8 @@ function PaymentModal({
     rubro,
     provincia,
     localidades,
-    coords
+    coords,
+    detectedPaymentId
 }: {
     totalAvailable: number,
     onClose: () => void,
@@ -51,7 +52,8 @@ function PaymentModal({
     rubro: string,
     provincia: string,
     localidades: string[],
-    coords?: Record<string, { lat: number, lon: number }>
+    coords?: Record<string, { lat: number, lon: number }>,
+    detectedPaymentId?: string | null
 }) {
     const CONTACT_CACHE_KEY = 'checkout_contact_cache_v1';
     const getCachedContact = () => {
@@ -74,6 +76,35 @@ function PaymentModal({
     const [whatsapp, setWhatsapp] = useState(cachedContact.whatsapp);
     const [quantity, setQuantity] = useState<number | string>(totalAvailable);
     const [emailError, setEmailError] = useState('');
+    const [paymentIdInput, setPaymentIdInput] = useState(detectedPaymentId || '');
+
+    // Auto-fill from localStorage if available
+    useEffect(() => {
+        if (!paymentIdInput) {
+            const savedId = searchId ? localStorage.getItem(`last_payment_id_${searchId}`) : null;
+            const globalId = localStorage.getItem('last_global_payment_id');
+            if (savedId) setPaymentIdInput(savedId);
+            else if (globalId) setPaymentIdInput(globalId);
+        }
+    }, [searchId, paymentIdInput]);
+
+    // Save manually entered ID globally
+    const handlePaymentIdChange = (val: string) => {
+        setPaymentIdInput(val);
+        if (val.trim()) {
+            localStorage.setItem('last_global_payment_id', val.trim());
+            if (searchId) {
+                localStorage.setItem(`last_payment_id_${searchId}`, val.trim());
+            }
+        }
+    };
+
+    // Auto-fill from prop if it changes
+    useEffect(() => {
+        if (detectedPaymentId) {
+            setPaymentIdInput(detectedPaymentId);
+        }
+    }, [detectedPaymentId]);
 
     const pricePerContact = 100;
     const numericQuantity = typeof quantity === 'string' ? (parseInt(quantity) || 0) : quantity;
@@ -212,7 +243,7 @@ function PaymentModal({
                     </div>
 
                     {/* MP Button */}
-                    <div className="relative">
+                    <div className="relative space-y-3">
                         <MercadoPagoButton
                             amount={total}
                             searchId={searchId}
@@ -231,12 +262,44 @@ function PaymentModal({
                         >
                             PAGAR CON MERCADO PAGO
                         </MercadoPagoButton>
+
+                        {/* Manual Verification UI for local testing */}
+                        <div className="pt-4 border-t border-gray-100 flex flex-col gap-2">
+                            <p className="text-[10px] text-gray-500 font-bold uppercase text-center">Verificación Manual</p>
+                            <input
+                                type="text"
+                                placeholder="ID de Operación (ej: 147822506931)"
+                                value={paymentIdInput}
+                                onChange={(e) => handlePaymentIdChange(e.target.value)}
+                                className="w-full px-4 py-2 border border-blue-100 bg-blue-50/30 rounded-xl text-xs text-black focus:border-blue-500 outline-none font-bold"
+                                style={{ color: '#000000' }}
+                            />
+                            <button
+                                onClick={() => {
+                                    if (!paymentIdInput.trim()) {
+                                        alert('Por favor, ingresa el ID de operación de Mercado Pago.');
+                                        return;
+                                    }
+                                    const url = new URL(window.location.href);
+                                    url.searchParams.set('payment', 'success');
+                                    url.searchParams.set('searchId', searchId);
+                                    url.searchParams.set('payment_id', paymentIdInput.trim());
+                                    window.location.href = url.toString();
+                                }}
+                                className="w-full py-2.5 rounded-xl font-bold text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all border border-blue-200"
+                            >
+                                Verificar pago con ID
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div className="mt-6 flex items-start gap-2 text-[10px] text-gray-400 bg-gray-50 p-3 rounded-xl border border-gray-100">
                     <FaExclamationTriangle className="text-yellow-500 shrink-0 mt-0.5" />
-                    <p>Entrega inmediata: te enviaremos el Excel descargable a tu Email y WhatsApp al confirmar el pago.</p>
+                    <div>
+                        <p className="font-bold">Entrega inmediata:</p>
+                        <p>Te enviaremos el Excel descargable a tu Email y WhatsApp al confirmar el pago.</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -296,51 +359,7 @@ function LocalitiesModal({
     );
 }
 
-// Sample Data
-const sampleLeads: Lead[] = [
-    {
-        id: 'sample-1',
-        nombre: 'Gimnasio Fitness Real',
-        rubro: 'Gimnasios',
-        direccion: 'Av. Santa Fe 1234, CABA',
-        email: 'contacto@fitnessreal.com',
-        whatsapp: '11 2233-4455',
-        web: 'www.fitnessreal.com',
-        localidad: 'Palermo',
-        provincia: 'CABA',
-        instagram: '@fitnessreal',
-        facebook: 'FitnessRealOficial',
-        isWhatsappValid: true
-    },
-    {
-        id: 'sample-2',
-        nombre: 'Abogados Asociados MZ',
-        rubro: 'Abogados',
-        direccion: 'Calle Lavalle 567, CABA',
-        email: 'info@abogadosmz.com',
-        whatsapp: '11 6677-8899',
-        web: 'www.abogadosmz.com.ar',
-        localidad: 'San Nicolas',
-        provincia: 'CABA',
-        instagram: undefined,
-        facebook: undefined,
-        isWhatsappValid: true
-    },
-    {
-        id: 'sample-3',
-        nombre: 'Panadería La Ideal',
-        rubro: 'Panaderías',
-        direccion: 'Rivadavia 8900, Liniers',
-        email: null,
-        whatsapp: '11 9988-7766',
-        web: null,
-        localidad: 'Liniers',
-        provincia: 'CABA',
-        instagram: '@laideal_panaderia',
-        facebook: 'LaIdealPanaderia',
-        isWhatsappValid: true
-    }
-];
+
 
 function normalizeLocalidad(value: string | null | undefined) {
     return (value || '')
@@ -421,274 +440,7 @@ function normalizeLocalidadLabel(localidad: string) {
     return trimmed;
 }
 
-function DemoJourneyVideo() {
-    const [frame, setFrame] = React.useState(0);
-    const demoScrollRef = React.useRef<HTMLDivElement | null>(null);
-    const totalFrames = 120;
-    const rubroTexto = 'hamburgueseria';
-    const localidadSeleccionadas = ['Olivos', 'San Isidro', 'Tigre'];
-    const searchInModal = 'tig';
 
-    React.useEffect(() => {
-        const interval = window.setInterval(() => {
-            setFrame((prev) => (prev + 1) % totalFrames);
-        }, 120);
-        return () => window.clearInterval(interval);
-    }, []);
-
-    const step = frame < 26 ? 0 : frame < 72 ? 1 : frame < 102 ? 2 : 3;
-    const typedLength = Math.min(
-        rubroTexto.length,
-        Math.floor((Math.min(frame, 25) / 25) * rubroTexto.length)
-    );
-    const rubroTyped = rubroTexto.slice(0, typedLength);
-    const progress = step === 2 ? Math.min(100, Math.round(((frame - 72) / 30) * 100)) : step > 2 ? 100 : 0;
-
-    const modalOpen = frame >= 34 && frame <= 68;
-    const modalTypedLength =
-        frame < 43 ? 0 : Math.min(searchInModal.length, Math.floor(((Math.min(frame, 51) - 43) / 8) * searchInModal.length));
-    const modalSearchText = searchInModal.slice(0, Math.max(0, modalTypedLength));
-    const showAllSelected = frame >= 56;
-    const showSavedSelection = frame >= 66;
-    const revealResults = frame >= 110;
-    const demoModalLocalidades = [
-        '25 de Mayo', '3 de febrero', 'A. Alsina',
-        'A. Gonzáles Cháves', 'Aguas Verdes', 'Alberti',
-        'Arrecifes', 'Ayacucho', 'Azul',
-        'Bahía Blanca', 'Balcarce', 'Baradero',
-        'Benito Juárez', 'Berisso', 'Bolívar'
-        , 'Tigre'
-    ];
-    const modalFilteredLocalidades = modalSearchText
-        ? demoModalLocalidades.filter((loc) => normalizeLocalidad(loc).includes(normalizeLocalidad(modalSearchText)))
-        : demoModalLocalidades;
-
-    const cursorPosition =
-        step === 0
-            ? { top: '20%', left: '28%' }
-            : step === 1
-                ? modalOpen
-                    ? frame < 42
-                        ? { top: '34%', left: '29%' }
-                        : frame < 55
-                            ? { top: '46%', left: '35%' }
-                            : frame < 62
-                                ? { top: '44%', left: '70%' }
-                                : { top: '79%', left: '74%' }
-                    : { top: '45%', left: '36%' }
-                : step === 2
-                    ? { top: '66%', left: '50%' }
-                    : { top: '90%', left: '13%' };
-
-    const isClickMoment = (
-        (frame >= 2 && frame <= 5) ||
-        (frame >= 34 && frame <= 37) ||
-        (frame >= 55 && frame <= 58) ||
-        (frame >= 61 && frame <= 64) ||
-        (frame >= 72 && frame <= 75)
-    );
-
-    React.useEffect(() => {
-        const el = demoScrollRef.current;
-        if (!el) return;
-
-        if (step === 0) {
-            el.scrollTo({ top: 0, behavior: 'smooth' });
-            return;
-        }
-
-        if (step >= 2) {
-            const maxScroll = el.scrollHeight - el.clientHeight;
-            el.scrollTo({ top: maxScroll, behavior: 'smooth' });
-        }
-    }, [step, frame]);
-
-    return (
-        <div className="relative rounded-2xl border border-gray-200 bg-white p-4 md:p-6 overflow-hidden">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
-                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>1. Completa rubro</div>
-                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>2. Abre y usa modal</div>
-                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 2 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>3. Busca y procesa</div>
-                <div className={`rounded-lg px-3 py-2 text-xs font-black text-center ${step === 3 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>4. Ve resultados</div>
-            </div>
-
-            <div ref={demoScrollRef} className="space-y-3 max-h-[430px] overflow-y-auto pr-1">
-                <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3">
-                    <p className="text-[11px] uppercase font-black tracking-wide text-gray-600 mb-1">Rubro</p>
-                    <p className="text-lg font-black text-gray-900 min-h-[28px]">
-                        {rubroTyped}
-                        {step === 0 && <span className="animate-pulse">|</span>}
-                    </p>
-                </div>
-
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                    <p className="text-[11px] uppercase font-black tracking-wide text-gray-600 mb-2">Localidades</p>
-                    <button
-                        type="button"
-                        className="w-full px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-black"
-                    >
-                        Seleccionar localidades ({showSavedSelection ? 3 : 0} de 142)
-                    </button>
-
-                    {showSavedSelection && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                            {localidadSeleccionadas.map((loc) => (
-                                <span key={loc} className="px-3 py-1 rounded-full border border-blue-300 bg-blue-100 text-blue-700 text-xs font-black">
-                                    {loc}
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                <div className="flex justify-center">
-                    <button
-                        type="button"
-                        className={`px-8 py-3 rounded-full text-white font-black text-base transition ${step >= 2 ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gray-300'}`}
-                    >
-                        BUSCAR LEADS
-                    </button>
-                </div>
-
-                <div className={`rounded-xl border px-4 py-3 transition ${step >= 2 ? 'border-blue-200 bg-blue-50/50 opacity-100' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
-                    <p className="text-xs font-black text-gray-600 mb-2">Procesando búsqueda</p>
-                    <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-200" style={{ width: `${progress}%` }} />
-                    </div>
-                    <p className="text-right text-xs font-bold text-blue-700 mt-1">{progress}%</p>
-                </div>
-
-                {revealResults ? (
-                    <div className="rounded-xl border border-gray-200 overflow-hidden transition opacity-100">
-                        <div className="grid grid-cols-3 bg-gray-100 px-3 py-2 text-[11px] font-black text-gray-600 uppercase tracking-wide">
-                            <span>Nombre</span>
-                            <span>Localidad</span>
-                            <span>Whatsapp</span>
-                        </div>
-                        {sampleLeads.slice(0, 3).map((lead) => (
-                            <div key={lead.id} className="grid grid-cols-3 px-3 py-2 text-xs border-t border-gray-100">
-                                <span className="font-bold text-gray-800 truncate pr-2">{lead.nombre}</span>
-                                <span className="text-gray-600">{lead.localidad}</span>
-                                <span className="text-blue-600 font-bold">{lead.whatsapp}</span>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-xs font-bold text-gray-400">
-                        Los resultados aparecerán al finalizar el scroll de búsqueda...
-                    </div>
-                )}
-            </div>
-
-            {modalOpen && (
-                <div className="absolute inset-0 z-10 bg-black/30 flex items-center justify-center p-4">
-                    <div className="w-full max-w-5xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
-                        <div className="p-4 space-y-4">
-                            <div className="relative">
-                                <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <div className="rounded-xl border border-gray-200 pl-11 pr-3 py-2.5 text-[15px] text-gray-500">
-                                    Buscar localidad por nombre...
-                                    <span className="font-black text-gray-800 ml-1">{modalSearchText}</span>
-                                    {frame >= 43 && frame <= 51 && <span className="animate-pulse text-gray-800">|</span>}
-                                </div>
-                            </div>
-                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                                <p className="text-sm font-black text-gray-700 mb-3 uppercase">Buenos Aires</p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                    {modalFilteredLocalidades.slice(0, 12).map((loc) => {
-                                        const checked = showAllSelected || localidadSeleccionadas.includes(loc);
-                                        return (
-                                            <div key={loc} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700">
-                                                <span className={`h-5 w-5 rounded border inline-flex items-center justify-center text-[10px] ${checked ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-400 text-transparent'}`}>✓</span>
-                                                <span>{loc}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-                        <div className="px-4 py-3 border-t border-gray-100 flex justify-between items-center">
-                            <button type="button" className="px-4 py-2 rounded-lg border border-blue-200 text-blue-700 text-sm font-black">
-                                Seleccionar todas
-                            </button>
-                            <button type="button" className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-black">
-                                Guardar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <div
-                className="pointer-events-none absolute z-20 transition-all duration-500"
-                style={cursorPosition}
-                aria-hidden
-            >
-                <div className="relative">
-                    <FaMousePointer className="text-black drop-shadow text-[22px]" />
-                    {isClickMoment && (
-                        <>
-                            <span className="absolute -inset-2 rounded-full border-2 border-black/40 animate-ping" />
-                            <span
-                                className="absolute -inset-4 rounded-full border border-black/30 animate-ping"
-                                style={{ animationDelay: '120ms' }}
-                            />
-                        </>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function SampleResultsModal({ onClose }: { onClose: () => void }) {
-    React.useEffect(() => {
-        const handleEsc = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
-    }, [onClose]);
-
-    return (
-        <div
-            className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-fade-in cursor-pointer"
-            onClick={onClose}
-        >
-            <div
-                className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full relative border border-gray-100 animate-scale-up overflow-hidden max-h-[90vh] flex flex-col cursor-default"
-                onClick={(e) => e.stopPropagation()}
-            >
-                <button
-                    onClick={onClose}
-                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 text-3xl font-light transition cursor-pointer z-10"
-                >
-                    &times;
-                </button>
-
-                <div className="text-center mb-6">
-                    <h3 className="text-3xl font-black text-gray-900 mb-1">Modo demostración</h3>
-                    <p className="text-gray-500 text-sm font-medium">
-                        Todos los datos son de conocimiento público
-                    </p>
-                </div>
-
-                <div className="overflow-y-auto flex-1 bg-gray-50 rounded-2xl border border-gray-100 mb-4 p-3">
-                    <DemoJourneyVideo />
-                </div>
-
-                <div className="text-center pt-4">
-                    <button
-                        onClick={onClose}
-                        className="px-10 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-black rounded-2xl shadow-xl hover:shadow-blue-500/30 transition-all transform hover:-translate-y-1"
-                    >
-                        ¡ENTENDIDO, QUIERO BUSCAR! 🚀
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 function LeadsApp() {
     const [rubro, setRubro] = useState('');
@@ -701,7 +453,6 @@ function LeadsApp() {
     const [count, setCount] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [showPayment, setShowPayment] = useState(false);
-    const [showSampleModal, setShowSampleModal] = useState(false);
     const [showLocsModal, setShowLocsModal] = useState(false);
     const [isLocalidadModalOpen, setIsLocalidadModalOpen] = useState(false);
     const [purchaseSummary, setPurchaseSummary] = useState<PurchaseSummary | null>(null);
@@ -716,6 +467,9 @@ function LeadsApp() {
     const [displayProgress, setDisplayProgress] = useState(0);
     const [searchCoords, setSearchCoords] = useState<Record<string, { lat: number, lon: number }>>({});
     const [downloadToken, setDownloadToken] = useState<string | null>(null);
+    const [detectedPaymentId, setDetectedPaymentId] = useState<string | null>(null);
+    const [deliveryStatus, setDeliveryStatus] = useState<string | null>('pending');
+    const [visualProgress, setVisualProgress] = useState(0);
 
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -806,16 +560,25 @@ function LeadsApp() {
 
                 // FALLBACK: Auto-verify payment if webhook is delayed
                 const paymentId = searchParams.get('payment_id') || searchParams.get('collection_id');
+                if (paymentId) {
+                    setDetectedPaymentId(paymentId);
+                    localStorage.setItem(`last_payment_id_${urlSearchId}`, paymentId);
+                }
+
                 if (paymentId && !hasVerifiedPayment.current) {
                     hasVerifiedPayment.current = true;
+                    setSearchStatus('verifying_payment');
                     console.log('Payment success detected in URL, triggering manual verification fallback...');
                     axios.post('/api/payment/verify', {
                         paymentId,
                         searchId: urlSearchId
                     }).then(res => {
                         console.log('Manual payment verification result:', res.data);
+                        setSearchStatus('processing_deep');
                     }).catch(err => {
                         console.error('Manual payment verification failed:', err);
+                        // If it fails, keep processing_deep but UI will show the error via searchStatus label if we wanted to
+                        setSearchStatus('processing_deep');
                     });
                 }
             } else {
@@ -859,10 +622,14 @@ function LeadsApp() {
 
                     if (bot_job_id && !searchParams.get('searchId')) {
                         console.log(`[Search Link] Internal ID: ${searchId} -> Bot Job ID: ${bot_job_id}`);
-                        // Sync with URL for recovery
-                        const params = new URLSearchParams(searchParams.toString());
+                        // Sync with URL for recovery without full re-render
+                        const params = new URLSearchParams(window.location.search);
                         params.set('searchId', searchId);
-                        router.replace(`/?${params.toString()}`);
+                        window.history.replaceState(null, '', `?${params.toString()}`);
+                    }
+
+                    if (response.data.deliveryStatus) {
+                        setDeliveryStatus(response.data.deliveryStatus);
                     }
 
                     if (status) {
@@ -887,9 +654,9 @@ function LeadsApp() {
                         } else {
                             // Fallback to DB if no results in tracking row
                             const fallbackResponse = await axios.post('/api/search', {
-                                rubro,
-                                provincia,
-                                localidades
+                                rubro: response.data.rubro || rubro,
+                                provincia: provincia || 'Argentina',
+                                localidades: response.data.localidades || localidades
                             });
                             setResults(fallbackResponse.data.leads || []);
                             setCount(fallbackResponse.data.count || 0);
@@ -959,6 +726,10 @@ function LeadsApp() {
                             setSearchStatus(currentStatus);
                         }
 
+                        if (statusRes.data.deliveryStatus) {
+                            setDeliveryStatus(statusRes.data.deliveryStatus);
+                        }
+
                         // Rehydrate metadata if missing (happens on post-payment return)
                         if (!rubro && sRubro) setRubro(sRubro);
                         if ((!localidades || localidades.length === 0) && sLocs) {
@@ -1020,52 +791,79 @@ function LeadsApp() {
 
     useEffect(() => {
         const shouldShowProgress = (isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle';
-        if (!shouldShowProgress) return;
+        if (!shouldShowProgress || !searchId) return;
 
-        const timeoutId = setTimeout(() => {
-            const section = progressSectionRef.current;
-            if (!section) return;
-            const absoluteTop = window.scrollY + section.getBoundingClientRect().top - 24;
-            window.scrollTo({
-                top: Math.max(absoluteTop, 0),
-                behavior: 'smooth'
-            });
-        }, 120);
+        // One-time scroll guard per search phase
+        const scrollKey = `scrolled_${searchId}_${isProcessing ? 'enrich' : 'search'}`;
+        if (sessionStorage.getItem(scrollKey)) return;
 
-        return () => clearTimeout(timeoutId);
-    }, [isLoading, isInitialSearch, isProcessing, searchStatus]);
+        const section = progressSectionRef.current;
+        if (!section) return;
+
+        const rect = section.getBoundingClientRect();
+        const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+
+        if (!isVisible) {
+            const timeoutId = setTimeout(() => {
+                const absoluteTop = window.scrollY + section.getBoundingClientRect().top - 24;
+                window.scrollTo({
+                    top: Math.max(absoluteTop, 0),
+                    behavior: 'smooth'
+                });
+                sessionStorage.setItem(scrollKey, 'true');
+            }, 150);
+            return () => clearTimeout(timeoutId);
+        }
+    }, [isLoading, isInitialSearch, isProcessing, searchId]); // Removed searchStatus dependency
+
+    // Unified Progress Side-Effect (Monotonic)
+    useEffect(() => {
+        const target = calculateProgress(searchStatus);
+        setVisualProgress(prev => {
+            if (target > prev) return target;
+            // Never go back unless it's a reset (searchStatus idle or no searchId)
+            if (searchStatus === 'idle' || !searchId) return 0;
+            return prev;
+        });
+    }, [searchStatus, deliveryStatus, displayProgress, searchId]);
 
     const calculateProgress = (status: string) => {
-        if (status === 'completed' || status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 100;
-        if (status === 'error' || status === 'idle') return 0;
+        // Ultimate goal: Lead delivery
+        if (deliveryStatus === 'sent') return 100;
 
-        // Enrichment progress (enriching_XX format)
+        // If it's a known ending state but not sent yet
+        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 99;
+
+        // Enrichment progress (enriching_XX format) -> Map 95-99%
         if (status.startsWith('enriching_')) {
             const pct = parseInt(status.split('_')[1]) || 0;
-            return Math.min(pct, 95);
+            // Map 0-100 of enrichment to 95-99 of total progress
+            return Math.floor(95 + (pct * 0.04));
         }
 
-        // If we have a displayProgress (from initial search), use it
-        if (displayProgress > 0) return Math.floor(displayProgress);
+        if (status === 'completed') return 95;
 
+        // Base states
+        if (status === 'error' || status === 'idle') return 0;
         if (status === 'geolocating') return 5;
+
+        // If we have a displayProgress (from initial search), use it -> Map 5-95%
+        // We ensure it starts at 5 (geolocating) and goes up to 95
+        if (displayProgress > 0) {
+            return Math.max(5, Math.min(Math.floor(displayProgress), 95));
+        }
+
         if (status === 'scraping') return 10;
         if (status === 'processing_deep') return 15;
 
-        // Parse "Procesando X (1/5)..."
-        const match = status.match(/\((\d+)\/(\d+)\)/);
-        if (match) {
-            const current = parseInt(match[1]);
-            const total = parseInt(match[2]);
-            const progress = 10 + ((current / total) * 85);
-            return Math.min(Math.floor(progress), 95);
-        }
         return 0;
     };
 
     const getSearchStatusLabel = (status: string) => {
-        if (status === 'completed') return '✅ ¡BÚSQUEDA FINALIZADA!';
-        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return '✅ ¡LEADS ENVIADOS!';
+        if (deliveryStatus === 'sent') return '✅ ¡LEADS ENVIADOS A TU EMAIL!';
+        if (status === 'verifying_payment') return '🔒 VERIFICANDO PAGO...';
+        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return '✉️ ENVIANDO EMAIL...';
+        if (status === 'completed') return '✅ ¡BUSQUEDA FINALIZADA!';
         if (status === 'error') return '❌ ERROR EN EL PROCESO';
         if (status.includes('Geolocalizando') || status === 'geolocating') return '⚙️ GEOLOCALIZANDO...';
         if (status.startsWith('enriching_')) return '⌛ ENRIQUECIENDO CONTACTOS...';
@@ -1084,6 +882,8 @@ function LeadsApp() {
     // 4. Reset/Cancel Search Logic
     const handleResetSearch = () => {
         const currentSearchId = searchId;
+
+        // Internal state resets
         setIsInitialSearch(false);
         setIsLoading(false);
         setIsProcessing(false);
@@ -1093,25 +893,29 @@ function LeadsApp() {
         setResults([]);
         setCount(null);
         setDisplayProgress(0);
+        setVisualProgress(0);
         setSearchCoords({});
         setPollCount(0);
         setCurrentLocIndex(0);
         setPurchaseSummary(null);
-
-        // Limpieza de campos de formulario
-        setRubro('');
+        setDetectedPaymentId(null);
+        setDeliveryStatus('pending');
+        setDownloadToken(null);
         setProvincia('Argentina');
+        setRubro('');
         setLocalidades([]);
 
+        setVisualProgress(0);
+
+        // Persistent storage cleanup
         localStorage.removeItem('active_search');
         if (currentSearchId) {
             localStorage.removeItem(`pending_purchase_${currentSearchId}`);
+            localStorage.removeItem(`last_payment_id_${currentSearchId}`);
         }
 
-        // Clear URL
-        const params = new URLSearchParams(searchParams.toString());
-        params.delete('searchId');
-        params.delete('payment');
+        // URL cleanup
+        const params = new URLSearchParams();
         router.replace(`/?${params.toString()}`);
     };
 
@@ -1134,12 +938,8 @@ function LeadsApp() {
             return;
         }
 
-        setIsLoading(true);
-        setSearchStatus('geolocating');
-        setDisplayProgress(prev => (prev > 5 ? prev : 5));
-        setCurrentLocIndex(0);
-        setError(null);
         if (!fromPolling) {
+            const currentSearchId = searchId;
             // Limpieza inmediata y explícita para evitar "datos fantasma"
             setResults([]);
             setCount(null);
@@ -1151,8 +951,23 @@ function LeadsApp() {
             setPollCount(0);
             setCurrentLocIndex(0);
             setSearchCoords({});
+            setPurchaseSummary(null);
+            setDetectedPaymentId(null);
+            setDeliveryStatus('pending');
+            setDownloadToken(null);
+            setVisualProgress(0);
+
             localStorage.removeItem('active_search');
+            if (currentSearchId) {
+                localStorage.removeItem(`pending_purchase_${currentSearchId}`);
+                localStorage.removeItem(`last_payment_id_${currentSearchId}`);
+            }
         }
+
+        setIsLoading(true);
+        setSearchStatus('geolocating');
+        setDisplayProgress(5);
+        setError(null);
 
         try {
             const response = await axios.post('/api/search', {
@@ -1175,7 +990,7 @@ function LeadsApp() {
                 // Update URL for recovery and CLEAR payment status
                 const params = new URLSearchParams();
                 params.set('searchId', serverSearchId);
-                router.replace(`/?${params.toString()}`);
+                window.history.replaceState(null, '', `?${params.toString()}`);
 
                 // Save to localStorage for resilience
                 localStorage.setItem('active_search', JSON.stringify({
@@ -1306,57 +1121,44 @@ function LeadsApp() {
                         </div>
                     )}
 
-                    {/* Search Button & Muestra & Nueva Búsqueda */}
-                    <div className="mt-8 flex flex-col items-center gap-6">
-                        <div className="flex flex-wrap items-center justify-center gap-6 w-full">
+                    {/* Search Button & Cancel/New Search */}
+                    <div className="mt-8 flex flex-col items-center gap-4">
+                        {/* Main Search Button - only visible when NOT searching and NO results */}
+                        {!isLoading && !isInitialSearch && !isProcessing && results.length === 0 && (
                             <button
                                 onClick={() => handleSearch()}
-                                disabled={isLoading || isInitialSearch}
-                                className={`
-                                    w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-lg shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap
-                                    ${(isLoading || isInitialSearch) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}
-                                `}
+                                className="w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-lg shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
                             >
-                                {(isLoading || isInitialSearch) ? (
-                                    <>
-                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Buscando leads...
-                                    </>
-                                ) : (
-                                    <>
-                                        <FaSearch /> BUSCAR LEADS
-                                    </>
-                                )}
+                                <FaSearch /> BUSCAR LEADS
                             </button>
-                        </div>
+                        )}
 
-                        <div className="flex flex-wrap items-center justify-center gap-4">
+                        {/* Cancel Search Button - visible while searching/loading */}
+                        {(isLoading || isInitialSearch || isProcessing) && (
                             <button
-                                onClick={() => setShowSampleModal(true)}
-                                className="px-8 py-3.5 border-2 border-gray-100 text-gray-400 hover:text-blue-600 hover:border-blue-100 hover:bg-blue-50/30 font-bold rounded-full transition-all flex items-center gap-2 text-sm bg-white shadow-sm transform hover:-translate-y-1"
+                                onClick={handleResetSearch}
+                                className="w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-base shadow-xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
                             >
-                                <span className="text-lg">👀</span> Muestra
+                                ✕ Cancelar Búsqueda
                             </button>
+                        )}
 
-                            {results.length > 0 && !isLoading && !isInitialSearch && (
-                                <button
-                                    onClick={handleResetSearch}
-                                    className="px-8 py-3.5 border-2 border-red-50 text-red-400 hover:text-red-600 hover:border-red-100 hover:bg-red-50/30 font-bold rounded-full transition-all flex items-center gap-2 text-sm bg-white shadow-sm transform hover:-translate-y-1"
-                                >
-                                    <FaSearch className="text-[10px]" /> Nueva Búsqueda
-                                </button>
-                            )}
-                        </div>
+                        {/* New Search Button - visible after results arrive or search error */}
+                        {(results.length > 0 || searchStatus === 'error') && !isLoading && !isInitialSearch && !isProcessing && (
+                            <button
+                                onClick={handleResetSearch}
+                                className="w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-base shadow-xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                            >
+                                <FaSearch /> Nueva Búsqueda
+                            </button>
+                        )}
                     </div>
 
                     {/* Progress Bar & Status */}
                     {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
                         <div ref={progressSectionRef} className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
-                            <div className={`${(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
+                                <div className={`${(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
                                     {(searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? (
                                         <div className="flex flex-col items-center w-full max-w-lg">
                                             {/* Immersive Animation Container */}
@@ -1432,11 +1234,11 @@ function LeadsApp() {
                                 <div className="w-full mt-4 flex items-center gap-4">
                                     <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200 shadow-inner">
                                         <div
-                                            className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                                            style={{ width: `${calculateProgress(searchStatus)}%` }}
+                                            className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-[2000ms] ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                            style={{ width: `${visualProgress}%` }}
                                         ></div>
                                     </div>
-                                    <span className="text-xs font-black text-blue-500 w-10">{calculateProgress(searchStatus)}%</span>
+                                    <span className="text-xs font-black text-blue-500 w-10">{visualProgress}%</span>
                                 </div>
                             </div>
 
@@ -1445,12 +1247,6 @@ function LeadsApp() {
                                     {searchStatus === 'geolocating' ? 'Estamos preparando el mapa de búsqueda...' :
                                         'No cierres esta pestaña. Los resultados aparecerán abajo automáticamente.'}
                                 </p>
-                                <button
-                                    onClick={handleResetSearch}
-                                    className="text-[10px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors cursor-pointer border-b border-transparent hover:border-red-600"
-                                >
-                                    Cancelar Búsqueda
-                                </button>
                             </div>
 
                             {purchaseSummary && (
@@ -1642,15 +1438,10 @@ function LeadsApp() {
                                     provincia={provincia}
                                     localidades={localidades}
                                     coords={searchCoords}
+                                    detectedPaymentId={detectedPaymentId}
                                 />
                             )}
 
-                            {/* Sample Modal */}
-                            {showSampleModal && (
-                                <SampleResultsModal
-                                    onClose={() => setShowSampleModal(false)}
-                                />
-                            )}
                         </>
                     );
                 })()}
