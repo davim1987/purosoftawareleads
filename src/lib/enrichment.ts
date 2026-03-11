@@ -37,6 +37,7 @@ interface EnrichmentStatus {
     error: string | null;
     finishedAt: string | null;
     downloadToken: string | null;
+    currentBusinessName: string | null;
 }
 
 interface StartEnrichmentResult {
@@ -298,6 +299,7 @@ export async function getEnrichmentStatus(searchId: string): Promise<EnrichmentS
             error: null,
             finishedAt: null,
             downloadToken: null,
+            currentBusinessName: null,
         };
     }
 
@@ -322,5 +324,6 @@ export async function getEnrichmentStatus(searchId: string): Promise<EnrichmentS
         error: job.error,
         finishedAt: job.finished_at,
         downloadToken,
+        currentBusinessName: (job as any).current_business_name || null,
     };
 }

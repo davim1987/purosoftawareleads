@@ -7,6 +7,8 @@ import { FaSearch, FaWhatsapp, FaInstagram, FaFacebook, FaEnvelope, FaMapMarkerA
 import { BiCheckShield } from 'react-icons/bi';
 import MercadoPagoButton from '@/components/MercadoPagoButton';
 import LocalidadSelector from '@/components/LocalidadSelector';
+import LeadTable from '@/components/LeadTable';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface Lead {
     id: string;
@@ -131,23 +133,23 @@ function PaymentModal({
 
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full relative border border-gray-100 animate-scale-up overflow-hidden">
+            <div className="bg-white dark:bg-[#0B0F19] rounded-3xl shadow-2xl p-6 md:p-8 max-w-lg w-full relative border border-gray-100 dark:border-gray-800 animate-scale-up overflow-y-auto max-h-[95vh] custom-scrollbar">
                 {/* Decorative background */}
                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
 
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 text-3xl font-light transition cursor-pointer"
+                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 dark:hover:text-gray-100 text-3xl font-light transition cursor-pointer"
                 >
                     &times;
                 </button>
 
                 <div className="text-center mb-6">
-                    <h3 className="text-3xl font-black text-gray-900 mb-2">¡LO QUIERO! 🚀</h3>
-                    <p className="text-gray-500 text-sm">
+                    <h3 className="text-3xl font-black text-gray-900 dark:text-white mb-2">¡LO QUIERO! 🚀</h3>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">
                         Completá tus datos para recibir la base de datos completa.
                     </p>
-                    <div className="mt-4 inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-xs font-black border border-blue-100 shadow-sm">
+                    <div className="mt-4 inline-flex items-center gap-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-4 py-1.5 rounded-full text-xs font-black border border-blue-100 dark:border-blue-800 shadow-sm">
                         <span>1 CONTACTO X $100 ARS</span>
                     </div>
                 </div>
@@ -156,7 +158,7 @@ function PaymentModal({
                     {/* Quantity */}
                     <div>
                         <div className="flex justify-between items-end mb-1.5">
-                            <label className="text-sm font-bold text-gray-700">1. Cantidad de contactos</label>
+                            <label className="text-sm font-bold text-gray-700 dark:text-gray-300">1. Cantidad de contactos</label>
                             <span className="text-xs text-blue-500 font-bold">{totalAvailable} disponibles</span>
                         </div>
                         <div className="flex items-center gap-3">
@@ -175,12 +177,11 @@ function PaymentModal({
                                     if (val > totalAvailable) val = totalAvailable;
                                     setQuantity(val);
                                 }}
-                                className="flex-1 px-5 py-3 border-2 border-gray-100 rounded-2xl text-black font-black text-lg focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
-                                style={{ color: '#000000' }}
+                                className="flex-1 px-5 py-3 border-2 border-gray-100 dark:border-gray-800 bg-transparent rounded-2xl text-black dark:text-white font-black text-lg focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
                             />
                             <button
                                 onClick={() => setQuantity(totalAvailable)}
-                                className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-2xl transition-colors text-sm"
+                                className="px-4 py-3 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-2xl transition-colors text-sm"
                             >
                                 Todos
                             </button>
@@ -190,7 +191,7 @@ function PaymentModal({
                     {/* Contact Info */}
                     <div className="grid grid-cols-1 gap-4">
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1.5">2. Tu Email</label>
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">2. Tu Email</label>
                             <input
                                 type="email"
                                 name="checkout_email"
@@ -206,14 +207,13 @@ function PaymentModal({
                                         setEmailError('');
                                     }
                                 }}
-                                className={`w-full px-5 py-3 border-2 rounded-2xl text-black font-medium focus:ring-4 transition-all outline-none ${emailError ? 'border-red-100 bg-red-50 focus:ring-red-100 focus:border-red-400' : 'border-gray-100 focus:border-blue-500 focus:ring-blue-500/10'
+                                className={`w-full px-5 py-3 border-2 bg-transparent rounded-2xl text-black dark:text-white font-medium focus:ring-4 transition-all outline-none ${emailError ? 'border-red-100 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10 focus:ring-red-100 dark:focus:ring-red-900/20 focus:border-red-400' : 'border-gray-100 dark:border-gray-800 focus:border-blue-500 focus:ring-blue-500/10'
                                     }`}
-                                style={{ color: '#000000' }}
                             />
                             {emailError && <p className="text-red-500 text-[10px] mt-1 font-bold">{emailError}</p>}
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1.5">3. Tu WhatsApp</label>
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1.5">3. Tu WhatsApp</label>
                             <div className="relative">
                                 <span className="absolute left-4 top-3 text-xl" title="Argentina">🇦🇷</span>
                                 <input
@@ -224,8 +224,7 @@ function PaymentModal({
                                     value={whatsapp}
                                     onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, ''))}
                                     maxLength={10}
-                                    className="w-full pl-14 pr-5 py-3 border-2 border-gray-100 rounded-2xl text-black font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
-                                    style={{ color: '#000000' }}
+                                    className="w-full pl-14 pr-5 py-3 border-2 bg-transparent border-gray-100 dark:border-gray-800 rounded-2xl text-black dark:text-white font-medium focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
                                 />
                             </div>
                         </div>
@@ -263,34 +262,7 @@ function PaymentModal({
                             PAGAR CON MERCADO PAGO
                         </MercadoPagoButton>
 
-                        {/* Manual Verification UI for local testing */}
-                        <div className="pt-4 border-t border-gray-100 flex flex-col gap-2">
-                            <p className="text-[10px] text-gray-500 font-bold uppercase text-center">Verificación Manual</p>
-                            <input
-                                type="text"
-                                placeholder="ID de Operación (ej: 147822506931)"
-                                value={paymentIdInput}
-                                onChange={(e) => handlePaymentIdChange(e.target.value)}
-                                className="w-full px-4 py-2 border border-blue-100 bg-blue-50/30 rounded-xl text-xs text-black focus:border-blue-500 outline-none font-bold"
-                                style={{ color: '#000000' }}
-                            />
-                            <button
-                                onClick={() => {
-                                    if (!paymentIdInput.trim()) {
-                                        alert('Por favor, ingresa el ID de operación de Mercado Pago.');
-                                        return;
-                                    }
-                                    const url = new URL(window.location.href);
-                                    url.searchParams.set('payment', 'success');
-                                    url.searchParams.set('searchId', searchId);
-                                    url.searchParams.set('payment_id', paymentIdInput.trim());
-                                    window.location.href = url.toString();
-                                }}
-                                className="w-full py-2.5 rounded-xl font-bold text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all border border-blue-200"
-                            >
-                                Verificar pago con ID
-                            </button>
-                        </div>
+
                     </div>
                 </div>
 
@@ -316,25 +288,25 @@ function LocalitiesModal({
 }) {
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[60] backdrop-blur-md animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full relative border border-gray-100 animate-scale-up">
+            <div className="bg-white dark:bg-[#0B0F19] rounded-3xl shadow-2xl p-8 max-w-md w-full relative border border-gray-100 dark:border-gray-800 animate-scale-up">
                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
 
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 text-3xl font-light transition cursor-pointer"
+                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 dark:hover:text-gray-100 text-3xl font-light transition cursor-pointer"
                 >
                     &times;
                 </button>
 
                 <div className="text-center mb-6">
-                    <h3 className="text-2xl font-black text-gray-900 mb-2 uppercase tracking-tight">Regiones Seleccionadas 📍</h3>
-                    <p className="text-gray-500 text-sm">Estas son las localidades incluidas en tu búsqueda.</p>
+                    <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-2 uppercase tracking-tight">Regiones Seleccionadas 📍</h3>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">Estas son las localidades incluidas en tu búsqueda.</p>
                 </div>
 
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                     {localidades.length > 0 ? (
                         localidades.map((loc, idx) => (
-                            <div key={idx} className="flex items-center gap-3 p-3 bg-blue-50/50 rounded-xl border border-blue-100/50 text-blue-900 font-bold text-sm">
+                            <div key={idx} className="flex items-center gap-3 p-3 bg-blue-50/50 dark:bg-blue-900/20 rounded-xl border border-blue-100/50 dark:border-blue-800/30 text-blue-900 dark:text-blue-200 font-bold text-sm">
                                 <span className="w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-[10px] shrink-0 font-black">{idx + 1}</span>
                                 {loc}
                             </div>
@@ -346,10 +318,10 @@ function LocalitiesModal({
                     )}
                 </div>
 
-                <div className="mt-8 pt-6 border-t border-gray-100">
+                <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800">
                     <button
                         onClick={onClose}
-                        className="w-full py-4 bg-gray-900 text-white font-black rounded-2xl hover:bg-black transition-colors shadow-lg"
+                        className="w-full py-4 bg-gray-900 dark:bg-blue-600 text-white font-black rounded-2xl hover:bg-black dark:hover:bg-blue-700 transition-colors shadow-lg"
                     >
                         CERRAR LISTADO
                     </button>
@@ -467,6 +439,7 @@ function LeadsApp() {
     const [displayProgress, setDisplayProgress] = useState(0);
     const [searchCoords, setSearchCoords] = useState<Record<string, { lat: number, lon: number }>>({});
     const [downloadToken, setDownloadToken] = useState<string | null>(null);
+    const [currentBusinessName, setCurrentBusinessName] = useState<string | null>(null);
     const [detectedPaymentId, setDetectedPaymentId] = useState<string | null>(null);
     const [deliveryStatus, setDeliveryStatus] = useState<string | null>('pending');
     const [visualProgress, setVisualProgress] = useState(0);
@@ -708,6 +681,9 @@ function LeadsApp() {
                             const pct = Math.floor((enrichData.processed / enrichData.total) * 100);
                             setSearchStatus(`enriching_${pct}`);
                             setDisplayProgress(pct);
+                            if (enrichData.currentBusinessName) {
+                                setCurrentBusinessName(enrichData.currentBusinessName);
+                            }
                         }
 
                         if (enrichData.downloadToken) {
@@ -1033,25 +1009,29 @@ function LeadsApp() {
     };
 
     return (
-        <main className="min-h-screen bg-gray-50 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-4xl w-full space-y-8">
+        <main className="min-h-screen bg-transparent flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="max-w-4xl w-full space-y-8 relative">
 
-                {/* Header */}
-                <div className="text-center">
-                    <h1 className="text-4xl font-extrabold text-blue-900 sm:text-5xl md:text-6xl">
-                        Purosoftware Leads B2B
+                {/* Header with Theme Toggle */}
+                <div className="absolute -top-6 md:top-0 right-0 z-50">
+                    <ThemeToggle />
+                </div>
+
+                <div className="text-center mt-8 md:mt-0">
+                    <h1 className="text-4xl font-extrabold text-blue-900 dark:text-white sm:text-5xl md:text-6xl tracking-tight">
+                        Purosoftware <span className="text-blue-600 dark:text-blue-500">Leads</span> B2B
                     </h1>
-                    <p className="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
+                    <p className="mt-3 max-w-md mx-auto text-base text-gray-500 dark:text-gray-400 font-medium sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
                         Potencia tu negocio con nuestra base de datos verificada y actualizada.
                     </p>
                 </div>
 
                 {/* Search Box */}
-                <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
+                <div className="bg-white dark:bg-[#111827] p-8 rounded-3xl shadow-2xl shadow-blue-900/5 dark:shadow-none border border-gray-100 dark:border-gray-800">
                     <div className="max-w-2xl mx-auto space-y-6">
                         {/* Rubro */}
                         <div className="text-center">
-                            <label htmlFor="rubro" className="block text-sm font-black tracking-wide text-gray-700 uppercase mb-2">
+                            <label htmlFor="rubro" className="block text-sm font-black tracking-wide text-gray-700 dark:text-gray-300 uppercase mb-2">
                                 Rubro
                             </label>
                             <input
@@ -1060,9 +1040,9 @@ function LeadsApp() {
                                 value={rubro}
                                 onChange={(e) => setRubro(e.target.value)}
                                 placeholder="Ej: hamburguesería, abogados, panadería..."
-                                className="w-full rounded-xl border-2 border-blue-200 bg-blue-50/50 px-5 py-4 text-center text-xl font-black text-gray-900 placeholder:text-gray-500 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                                className="w-full rounded-2xl border-2 border-blue-200 dark:border-gray-700 bg-blue-50/50 dark:bg-[#0B0F19] px-5 py-4 text-center text-xl font-black text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 outline-none transition focus:border-blue-500 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
                             />
-                            <p className="mt-2 text-xs font-medium text-gray-500">
+                            <p className="mt-2 text-xs font-medium text-gray-500 dark:text-gray-500">
                                 Escribí el tipo de negocio que querés buscar.
                             </p>
                         </div>
@@ -1071,14 +1051,14 @@ function LeadsApp() {
                     {/* Localidades */}
                     {Object.keys(dynamicLocalidades).length > 0 && (
                         <div className="mt-8 max-w-2xl mx-auto">
-                            <label className="text-sm font-black tracking-wide text-gray-700 uppercase mb-2 block text-center">
+                            <label className="text-sm font-black tracking-wide text-gray-700 dark:text-gray-300 uppercase mb-2 block text-center">
                                 Seleccioná las localidades
                             </label>
 
-                            <div className="p-3 border rounded-xl bg-gray-50">
+                            <div className="p-3 bg-gray-50 dark:bg-[#0B0F19] rounded-2xl border-none">
                                 {(() => {
                                     if (isLoadingGeo.localities) {
-                                        return <p className="text-xs text-center text-gray-400 py-8">Cargando localidades...</p>;
+                                        return <p className="text-xs text-center text-gray-400 dark:text-gray-600 py-8 font-medium">Cargando localidades...</p>;
                                     }
 
                                     return (
@@ -1092,8 +1072,8 @@ function LeadsApp() {
                                     );
                                 })()}
                             </div>
-                            <p className="text-xs text-right text-gray-500 mt-1 font-semibold">
-                                Seleccionados: {localidades.length}
+                            <p className="text-xs text-right text-gray-500 dark:text-gray-400 mt-2 font-semibold">
+                                Seleccionados: <span className="text-blue-600 dark:text-blue-400">{localidades.length}</span>
                             </p>
                             {localidades.length > 0 && (
                                 <div className="mt-3 space-y-2">
@@ -1162,9 +1142,9 @@ function LeadsApp() {
                     {(isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle' && (
                         <div ref={progressSectionRef} className="mt-8 space-y-6">
                             <div className="flex flex-col items-center">
-                                <div className={`${isInitialSearch && searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle' ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
-                                    {/* Big animation hub ONLY during initial search (not enrichment/post-payment) */}
-                                    {isInitialSearch && searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle' ? (
+                                <div className={`${((isInitialSearch || isProcessing) && searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? 'h-auto py-8' : 'h-16'} flex items-center justify-center overflow-hidden w-full relative`}>
+                                    {/* Big animation hub during initial search AND enrichment */}
+                                    {((isInitialSearch || isProcessing) && searchStatus !== 'completed' && searchStatus !== 'error' && searchStatus !== 'idle') ? (
                                         <div className="flex flex-col items-center w-full max-w-lg">
                                             {/* Immersive Animation Container */}
                                             <div className="relative h-72 w-full flex items-center justify-center mb-4 perspective-1000">
@@ -1174,9 +1154,11 @@ function LeadsApp() {
                                                     <div className="relative z-20 flex flex-col items-center px-4 transition-all duration-500">
                                                         <FaMapMarkerAlt className="text-4xl text-blue-600 mb-2 drop-shadow-sm" />
                                                         <span className="text-[11px] font-black text-blue-900 uppercase tracking-tighter text-center leading-tight break-words max-w-[100px] h-8 flex items-center justify-center">
-                                                            {localidades.length > 0
-                                                                ? localidades[currentLocIndex % localidades.length]
-                                                                : (searchStatus.includes('Geolocalizando') ? 'Localizando...' : 'Buscando...')}
+                                                            {isProcessing && currentBusinessName
+                                                                ? currentBusinessName
+                                                                : (localidades.length > 0
+                                                                    ? localidades[currentLocIndex % localidades.length]
+                                                                    : (searchStatus.includes('Geolocalizando') ? 'Localizando...' : 'Buscando...'))}
                                                         </span>
                                                     </div>
                                                     {/* Scan Line effect */}
@@ -1347,87 +1329,8 @@ function LeadsApp() {
                                         </div>
                                     </div>
 
-                                    <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 mb-8">
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-white">
-                                                    <tr>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rubro</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Localidad</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Instagram</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facebook</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
-                                                    {previewLeads.map((lead) => (
-                                                        <tr key={lead.id} className="hover:bg-gray-50 transition">
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
-                                                                <div className="flex flex-col">
-                                                                    <span>{lead.nombre || 'Nombre no disponible'}</span>
-                                                                    {lead.horario && lead.horario !== 'No disponible' && (
-                                                                        <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
-                                                                            🕒 {lead.horario}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                                                {lead.rubro}
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-medium">
-                                                                {lead.localidad || 'N/A'}
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    {lead.whatsapp && lead.whatsapp !== 'null' ? lead.whatsapp : (lead.telefono2 && lead.telefono2 !== 'null' ? lead.telefono2 : 'No disponible')}
-                                                                    {(lead.whatsapp || lead.telefono2) && (
-                                                                        <FaCheck className="text-green-500 text-[10px]" title="Número verificado" />
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-xs">
-                                                                <span className={`px-2 py-1 rounded-full border flex items-center justify-center gap-1 font-bold ${lead.instagram && lead.instagram !== 'null' ? 'bg-pink-50 text-pink-700 border-pink-100' : 'bg-gray-50 text-gray-400 border-gray-100'}`}>
-                                                                    {(lead.instagram && lead.instagram !== 'null') ? lead.instagram : 'N/A'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-xs">
-                                                                <span className={`px-2 py-1 rounded-full border flex items-center justify-center gap-1 font-bold ${lead.facebook && lead.facebook !== 'null' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-gray-50 text-gray-400 border-gray-100'}`}>
-                                                                    {(lead.facebook && lead.facebook !== 'null') ? lead.facebook : 'N/A'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
-                                                                <div className="flex items-center gap-2">
-                                                                    <FaEnvelope className={lead.email && lead.email !== 'null' ? "text-orange-500" : "text-gray-300"} />
-                                                                    <span className={lead.email && lead.email !== 'null' ? "text-gray-900 font-medium" : "text-gray-400 italic"}>
-                                                                        {(lead.email && lead.email !== 'null') ? lead.email : 'No disponible'}
-                                                                    </span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 text-sm text-gray-600">
-                                                                <div className="max-w-[150px] truncate" title={lead.direccion || 'No disponible'}>
-                                                                    {lead.direccion && lead.direccion !== 'null' ? lead.direccion : 'No disponible'}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        <div className="bg-gray-50 px-6 py-3 text-center border-t border-gray-200">
-                                            {remaining > 0 ? (
-                                                <p className="text-sm text-gray-500 italic">
-                                                    ... y {remaining} resultados más esperando por ti.
-                                                </p>
-                                            ) : (
-                                                <p className="text-sm text-gray-500 italic">
-                                                    Estos son todos los resultados encontrados.
-                                                </p>
-                                            )}
-                                        </div>
+                                    <div className="mb-8">
+                                        <LeadTable leads={previewLeads} remaining={remaining} />
                                     </div>
 
                                     {/* Removed old bottom payment section to prevent scroll */}

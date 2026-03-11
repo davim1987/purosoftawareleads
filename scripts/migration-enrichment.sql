@@ -64,3 +64,7 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS download_expires_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_download_token_unique
 ON orders(download_token)
 WHERE download_token IS NOT NULL;
+
+-- Add current_business_name to show real-time progress in UI
+ALTER TABLE public.enrichment_jobs ADD COLUMN IF NOT EXISTS current_business_name TEXT;
+

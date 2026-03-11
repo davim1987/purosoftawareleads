@@ -122,17 +122,25 @@ async def process_enrichment(request: EnrichRequest):
         nonlocal processed
         async with semaphore:
             try:
+                if supabase:
+                    try:
+                        supabase.table("enrichment_jobs").update({
+                            "current_business_name": business.name,
+                        }).eq("id", job_id).execute()
+                    except Exception as db_err:
+                        print(f"[Worker] DB Current Business Error: {db_err}")
+
                 await enrich_single_business(search_id, business)
             except Exception as e:
                 print(f"[Worker] Error enriching business '{business.name}': {e}")
                 traceback.print_exc()
             finally:
                 processed += 1
-                # Update progress in DB (throttle or use a lock if needed, but for 5 concurrent it's fine)
                 if supabase:
                     try:
                         supabase.table("enrichment_jobs").update({
                             "processed_businesses": processed,
+                            "current_business_name": None if processed >= total else business.name,
                         }).eq("id", job_id).execute()
                     except Exception as db_err:
                         print(f"[Worker] DB Progress Error: {db_err}")
