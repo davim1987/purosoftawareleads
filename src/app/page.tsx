@@ -547,10 +547,22 @@ function LeadsApp() {
                         searchId: urlSearchId
                     }).then(res => {
                         console.log('Manual payment verification result:', res.data);
-                        setSearchStatus('processing_deep');
+                        if (res.data.status === 'delivery_triggered_no_enrichment') {
+                            setSearchStatus('completed');
+                            setDisplayProgress(100);
+                            setIsProcessing(false);
+                            // Refresh results to show 0 if that's the case
+                            axios.get(`/api/search/status?id=${urlSearchId}`).then(sRes => {
+                                if (sRes.data.results) {
+                                    setResults(sRes.data.results);
+                                    setCount(sRes.data.count || 0);
+                                }
+                            });
+                        } else {
+                            setSearchStatus('processing_deep');
+                        }
                     }).catch(err => {
                         console.error('Manual payment verification failed:', err);
-                        // If it fails, keep processing_deep but UI will show the error via searchStatus label if we wanted to
                         setSearchStatus('processing_deep');
                     });
                 }
@@ -577,12 +589,18 @@ function LeadsApp() {
             // Fake "slow" progress increment
             progressInterval = setInterval(() => {
                 setDisplayProgress(prev => {
-                    if (prev >= 92) return prev; // Stay below 95% until done
-                    // Slower as it gets higher
-                    const increment = prev < 40 ? 4 : (prev < 70 ? 2 : 1);
-                    return prev + increment;
+                    if (prev >= 98) return prev; // Stay below 100% until actually done
+
+                    // Progressive slowdown: faster at start, very slow near end
+                    let increment = 0;
+                    if (prev < 30) increment = 2;
+                    else if (prev < 70) increment = 1;
+                    else if (prev < 90) increment = 0.5;
+                    else increment = 0.2;
+
+                    return Math.min(prev + increment, 98);
                 });
-            }, 1000); // Faster progress update
+            }, 500); // Smoother, more frequent updates
 
             const pollStatus = async () => {
                 if (!searchId) return;
@@ -793,23 +811,48 @@ function LeadsApp() {
         }
     }, [isLoading, isInitialSearch, searchId]); // Only scroll for initial search, not enrichment
 
-    // Unified Progress Side-Effect (Monotonic)
+    // Unified Progress Side-Effect (Smooth Animation)
+    const targetProgressRef = React.useRef(0);
+
     useEffect(() => {
         const target = calculateProgress(searchStatus);
-        setVisualProgress(prev => {
-            if (target > prev) return target;
-            // Never go back unless it's a reset (searchStatus idle or no searchId)
-            if (searchStatus === 'idle' || !searchId) return 0;
-            return prev;
-        });
+        if (searchStatus === 'idle' || !searchId) {
+            targetProgressRef.current = 0;
+            setVisualProgress(0);
+            return;
+        }
+        // Monotonic: only allow target to increase
+        if (target > targetProgressRef.current) {
+            targetProgressRef.current = target;
+        }
     }, [searchStatus, deliveryStatus, displayProgress, searchId]);
 
-    const calculateProgress = (status: string) => {
-        // ONLY 100% when email is actually delivered
-        if (deliveryStatus === 'sent') return 100;
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setVisualProgress(prev => {
+                const target = targetProgressRef.current;
+                // Instant reset
+                if (target === 0) return 0;
+                // Already at or past target
+                if (prev >= target) return prev;
+                // Smooth increment: faster when far, slower when close
+                const diff = target - prev;
+                const step = Math.max(1, Math.ceil(diff / 15));
+                return Math.min(prev + step, target);
+            });
+        }, 80);
+        return () => clearInterval(interval);
+    }, []);
 
-        // Sending email phase -> stay at 95%
-        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 95;
+    const calculateProgress = (status: string) => {
+        // Stop progress on failure
+        if (deliveryStatus === 'failed') return 0;
+
+        // ONLY 100% when email is actually delivered OR initial search is done
+        if (deliveryStatus === 'sent' || status === 'completed') return 100;
+
+        // Sending email phase -> stay at 98%
+        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 98;
 
         // Enrichment progress -> very slow crawl from 60% to 90%
         if (status.startsWith('enriching_')) {
@@ -829,9 +872,9 @@ function LeadsApp() {
         if (status === 'verifying_payment') return 56;
         if (status === 'processing_deep') return 58;
 
-        // Initial search progress -> Map 5-55%
+        // Initial search progress - Use displayProgress directly up to 95%
         if (displayProgress > 0) {
-            return Math.max(5, Math.min(Math.floor(displayProgress * 0.55), 55));
+            return Math.floor(displayProgress);
         }
 
         if (status === 'scraping') return 10;
@@ -840,6 +883,7 @@ function LeadsApp() {
     };
 
     const getSearchStatusLabel = (status: string) => {
+        if (deliveryStatus === 'failed') return '❌ ERROR: NO SE ENCONTRARON LEADS';
         if (deliveryStatus === 'sent') return '✅ ¡LEADS ENVIADOS A TU EMAIL!';
         if (status === 'verifying_payment') return '🔒 VERIFICANDO PAGO...';
         if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return '✉️ ENVIANDO EMAIL...';
@@ -956,11 +1000,11 @@ function LeadsApp() {
                 localidades
             });
 
-            // Extract the searchId (which is the bot jobId) from the response
+            // Extract the searchId from the response (always present now)
             const serverSearchId = response.data.searchId;
+            setSearchId(serverSearchId);
 
             if (response.data.status === 'processing') {
-                setSearchId(serverSearchId);
                 setIsInitialSearch(true);
                 setSearchStatus('scraping');
                 if (response.data.coords) {
@@ -986,6 +1030,11 @@ function LeadsApp() {
             setResults(response.data.leads || []);
             setCount(response.data.count || 0);
             setSearchStatus('completed');
+
+            // Also update URL for DB hits so return from MP works
+            const params = new URLSearchParams();
+            params.set('searchId', serverSearchId);
+            window.history.replaceState(null, '', `?${params.toString()}`);
 
             if (response.data.count === 0) {
                 setError('No encontramos resultados for esta búsqueda.');
@@ -1107,8 +1156,8 @@ function LeadsApp() {
 
                     {/* Search Button & Cancel/New Search */}
                     <div className="mt-8 flex flex-col items-center gap-4">
-                        {/* Main Search Button - only visible when NOT searching and NO results */}
-                        {!isLoading && !isInitialSearch && !isProcessing && results.length === 0 && (
+                        {/* Main Search Button - only visible when NOT searching and NO results and NO error */}
+                        {!isLoading && !isInitialSearch && !isProcessing && results.length === 0 && !error && (
                             <button
                                 onClick={() => handleSearch()}
                                 className="w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-lg shadow-2xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
@@ -1117,8 +1166,8 @@ function LeadsApp() {
                             </button>
                         )}
 
-                        {/* Cancel Search Button - visible while searching/loading */}
-                        {(isLoading || isInitialSearch || isProcessing) && (
+                        {/* Cancel Search Button - visible while searching/loading and NO error yet */}
+                        {(isLoading || isInitialSearch || isProcessing) && !error && (
                             <button
                                 onClick={handleResetSearch}
                                 className="w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-base shadow-xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
@@ -1127,8 +1176,8 @@ function LeadsApp() {
                             </button>
                         )}
 
-                        {/* New Search Button - visible after results arrive or search error */}
-                        {(results.length > 0 || searchStatus === 'error') && !isLoading && !isInitialSearch && !isProcessing && (
+                        {/* New Search Button - visible after results arrive OR search error OR timeout error */}
+                        {(results.length > 0 || searchStatus === 'error' || !!error) && !isLoading && !isInitialSearch && !isProcessing && (
                             <button
                                 onClick={handleResetSearch}
                                 className="w-full md:w-auto px-8 py-3 rounded-full text-white font-black text-base shadow-xl transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-3 whitespace-nowrap bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
@@ -1222,7 +1271,7 @@ function LeadsApp() {
                                 <div className="w-full mt-4 flex items-center gap-4">
                                     <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200 shadow-inner">
                                         <div
-                                            className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-[2000ms] ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                            className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-150 ease-linear shadow-[0_0_10px_rgba(59,130,246,0.5)]"
                                             style={{ width: `${visualProgress}%` }}
                                         ></div>
                                     </div>
@@ -1268,17 +1317,18 @@ function LeadsApp() {
 
                     {error && (
                         <div className="mt-6 flex flex-col items-center gap-4">
-                            <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-center justify-center gap-2 border border-red-200 w-full">
-                                <FaExclamationTriangle /> {error}
-                            </div>
-                            {searchStatus === 'error' && (
+                            <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 border border-red-200 dark:border-red-900/50 w-full shadow-lg shadow-red-500/10 transition-all animate-fade-in">
+                                <div className="flex items-center gap-3">
+                                    <FaExclamationTriangle className="text-xl shrink-0" />
+                                    <p className="font-bold text-sm">{error}</p>
+                                </div>
                                 <button
                                     onClick={handleResetSearch}
-                                    className="px-6 py-2 bg-gray-200 text-gray-700 rounded-full font-bold hover:bg-gray-300 transition"
+                                    className="whitespace-nowrap px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-tight shadow-md transition-all active:scale-95"
                                 >
-                                    Intentar de nuevo
+                                    Nueva Búsqueda
                                 </button>
-                            )}
+                            </div>
                         </div>
                     )}
                 </div>

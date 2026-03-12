@@ -5,6 +5,16 @@ import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
 import fs from 'fs';
 import path from 'path';
 
+function normalizeText(value: string | null | undefined) {
+    return (value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 async function logDebug(msg: string, searchId: string) {
     try {
         const { data: current } = await supabase.from('search_tracking').select('error_message').eq('id', searchId).single();
@@ -148,26 +158,46 @@ export function extractSocialHandle(url: string | null, platform: 'instagram' | 
 // Helper for Geolocation with Cache
 export async function getGeolocation(localidad: string, provincia: string) {
     try {
-        const { data: cached } = await supabase
-            .from('geolocalizacion')
-            .select('*')
-            .eq('localidad', localidad)
-            .eq('provincia', provincia)
-            .single();
+        // Clean up provincia: if it's just "Argentina", treat it as empty for cache lookup
+        const cleanProvincia = (provincia || '').replace(/(^Argentina|,?\s*Argentina$)/gi, '').trim();
+        const provinceFallback = cleanProvincia.toLowerCase().includes('gba') ? 'Buenos Aires' : cleanProvincia;
 
-        if (cached) return { lat: cached.latitud || cached.lat, lon: cached.longitud || cached.lon };
+        // Try cache lookup with locality only if provincia is just "Argentina"
+        let query = supabase.from('geolocalizacion').select('*').eq('localidad', localidad);
+        if (cleanProvincia && cleanProvincia !== '') {
+            query = query.eq('provincia', cleanProvincia);
+        }
+        
+        // Argentina approximate bounding box
+        const isInArgentina = (lat: number, lon: number) =>
+            lat >= -56 && lat <= -21 && lon >= -74 && lon <= -53;
+
+        const { data: entries } = await query;
+        if (entries && entries.length > 0) {
+            const cached = entries[0];
+            const lat = cached.latitud || cached.lat;
+            const lon = cached.longitud || cached.lon;
+            if (isInArgentina(lat, lon)) {
+                return { lat, lon };
+            }
+            // Bad cache entry (wrong country), delete it and re-fetch
+            console.log(`[Geo] Cached entry for "${localidad}" is outside Argentina (${lat}, ${lon}), deleting and re-fetching`);
+            await supabase.from('geolocalizacion').delete().eq('id', cached.id);
+        }
 
         console.log(`Geolocating ${localidad}, ${provincia} via Nominatim...`);
-        const provinceFallback = provincia.toLowerCase().includes('gba') ? 'Buenos Aires' : provincia;
-        const queries = [
-            `${localidad}, ${provincia}, Argentina`,
-            `${localidad}, ${provinceFallback}, Argentina`,
-            `${localidad}, Argentina`
-        ];
+
+        const queries = cleanProvincia
+            ? [
+                `${localidad}, ${cleanProvincia}, Argentina`,
+                `${localidad}, ${provinceFallback}, Argentina`,
+                `${localidad}, Argentina`
+            ]
+            : [`${localidad}, Argentina`];
 
         for (const rawQuery of queries) {
-            const query = encodeURIComponent(rawQuery);
-            const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`, {
+            const encodedQuery = encodeURIComponent(rawQuery);
+            const response = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodedQuery}&format=json&limit=1&countrycodes=ar`, {
                 headers: { 'User-Agent': 'PurosoftwareBot/1.0' }
             });
 
@@ -176,9 +206,10 @@ export async function getGeolocation(localidad: string, provincia: string) {
                 const lat = parseFloat(result.lat);
                 const lon = parseFloat(result.lon);
 
+                // Save to cache with the most descriptive info we have
                 await supabase.from('geolocalizacion').insert({
                     localidad,
-                    provincia,
+                    provincia: cleanProvincia || 'Argentina',
                     latitud: lat,
                     longitud: lon,
                     partido: result.display_name
@@ -309,6 +340,17 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                             horario: findValue(l, 'opening_hours', 'hours', 'business hours', 'horario') || 'No disponible'
                         };
 
+                        // STRICT LOCALITY FILTERING
+                        const normalizedLeadLoc = normalizeText(leadObj.localidad);
+                        const requestedLocs = validLocs.map(normalizeText);
+                        const isRequestedLocMap = requestedLocs.some(loc =>
+                            normalizedLeadLoc === loc || normalizedLeadLoc.includes(loc) || loc.includes(normalizedLeadLoc)
+                        );
+
+                        if (!isRequestedLocMap) {
+                            return null;
+                        }
+
                         aggregatedLeads.push(leadObj);
 
                         return {
@@ -317,7 +359,8 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                             rubro: leadObj.rubro,
                             direccion: leadObj.direccion,
                             localidad: leadObj.localidad,
-                            provincia: currentProvince, // Added this
+                            provincia: currentProvince,
+                            search_id: searchId, // Added this
                             whatsapp: leadObj.whatsapp,
                             email: leadObj.email === 'No disponible' ? null : leadObj.email,
                             web: leadObj.web,
@@ -325,7 +368,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                             facebook: leadObj.facebook === 'No disponible' ? null : leadObj.facebook,
                             updated_at: new Date().toISOString()
                         };
-                    });
+                    }).filter((l): l is NonNullable<typeof l> => l !== null);
 
                     // INCREMENTAL PERSISTENCE
                     if (jobLeadsToInsert.length > 0) {
@@ -341,12 +384,18 @@ export async function checkBotAndUpdateStatus(searchId: string) {
 
                             const protectedLeads = jobLeadsToInsert.map(newLead => {
                                 const exist = newLead.place_id ? existingMap.get(newLead.place_id) : null;
-                                if (!exist) return newLead;
+                                if (!exist) {
+                                  // For NEW leads, ensure 'id' is NOT present so the DB generator runs
+                                  const { id, ...rest } = newLead as any;
+                                  return rest;
+                                }
 
                                 const isAv = (val: any) => val && String(val).toLowerCase() !== 'no disponible' && String(val).toLowerCase() !== 'null';
                                 return {
                                     ...newLead,
-                                    id: exist.id, // Match with existing DB ID
+                                    // We can omit 'id' even for updates if we upsert on 'place_id'
+                                    // but if we want to be safe, we keep it ONLY for existing ones
+                                    id: exist.id, 
                                     email: isAv(newLead.email) ? newLead.email : (exist.email || newLead.email),
                                     whatsapp: isAv(newLead.whatsapp) ? newLead.whatsapp : (exist.whatsapp || newLead.whatsapp),
                                     web: isAv(newLead.web) ? newLead.web : (exist.web || newLead.web),

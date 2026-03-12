@@ -67,17 +67,21 @@ export async function POST(req: NextRequest) {
                 }
             });
 
-            // Trigger enrichment (replaces n8n deep scrape)
+            // Try direct delivery first if leads already exist in DB
             try {
+                const { hasDeliverableLeads } = await import('@/lib/enrichment');
+                const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
+
+                if (await hasDeliverableLeads(finalSearchId)) {
+                    console.log('[Payment Fallback] Leads found in DB, delivering directly');
+                    const deliveryResult = await deliverOrderBySearchId(finalSearchId);
+                    console.log(`[Payment Fallback] Direct delivery: ok=${deliveryResult.ok}, msg=${deliveryResult.message}`);
+                    return NextResponse.json({ status: 'delivered', message: deliveryResult.message });
+                }
+
+                console.log('[Payment Fallback] No leads in DB, calling enrichment worker');
                 const result = await startEnrichment(finalSearchId);
                 console.log(`[Payment Fallback] Enrichment: jobId=${result.jobId}, ok=${result.ok}, skipped=${result.skipped || false}`);
-
-                if (!result.ok && (result.message === 'No businesses found for enrichment' || result.message === 'No businesses found (already enriched in source)')) {
-                    console.log('[Payment Fallback] No businesses for enrichment, triggering direct delivery');
-                    const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
-                    await deliverOrderBySearchId(finalSearchId);
-                    return NextResponse.json({ status: 'delivery_triggered_no_enrichment' });
-                }
 
                 if (result.ok) {
                     await upsertOrder({
@@ -105,7 +109,7 @@ export async function POST(req: NextRequest) {
                     message: result.message || 'Enrichment trigger failed'
                 }, { status: 200 });
             } catch (enrichError) {
-                console.error('[Payment Fallback] Enrichment trigger failed:', enrichError);
+                console.error('[Payment Fallback] Delivery/enrichment failed:', enrichError);
                 await upsertOrder({
                     searchId: finalSearchId,
                     deliveryStatus: 'pending',
@@ -114,7 +118,7 @@ export async function POST(req: NextRequest) {
                         enrichment_queue_error: enrichError instanceof Error ? enrichError.message : String(enrichError)
                     }
                 });
-                return NextResponse.json({ status: 'enrichment_trigger_failed', message: 'Enrichment trigger failed' }, { status: 200 });
+                return NextResponse.json({ status: 'delivery_failed', message: 'Delivery/enrichment failed' }, { status: 200 });
             }
         } else {
             const fallbackSearchId = searchId || paymentData.external_reference;

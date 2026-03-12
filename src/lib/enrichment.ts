@@ -57,6 +57,12 @@ function normalizeText(value: string | null | undefined) {
         .trim();
 }
 
+function isAvailable(value: string): boolean {
+    if (!value) return false;
+    const lower = value.toLowerCase().trim();
+    return lower !== '' && lower !== 'no disponible' && lower !== 'null' && lower !== 'n/a' && lower !== '-';
+}
+
 function readString(obj: Record<string, unknown>, ...keys: string[]) {
     for (const key of keys) {
         const value = obj[key];
@@ -79,6 +85,17 @@ function toArrayOfStrings(value: unknown): string[] {
 }
 
 /**
+ * Check if there are deliverable leads in leads_free_search for a given search_id.
+ */
+export async function hasDeliverableLeads(searchId: string): Promise<boolean> {
+    const { count, error } = await supabase
+        .from('leads_free_search')
+        .select('id', { count: 'exact', head: true })
+        .eq('search_id', searchId);
+    return !error && (count || 0) > 0;
+}
+
+/**
  * Fetch businesses from leads_google_maps for a given order's search criteria.
  * Mirrors the query logic from order-delivery.ts.
  */
@@ -98,26 +115,51 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
     const localidades = toArrayOfStrings(orderData.localidades);
     const searchLimit = Math.max(Number(orderData.quantity_paid || 1) * 30, 500);
 
-    // Primary: lowercase rubro column
+    // 0. Primary: lookup by search_id (most reliable for newly generated leads)
     let { data: leadsData, error } = await supabase
         .from('leads_free_search')
         .select('*')
-        .ilike('rubro', `%${rubro}%`)
+        .eq('search_id', searchId)
         .limit(searchLimit);
 
-    // Fallback: capitalized Rubro column
-    if (!error && (!leadsData || leadsData.length === 0)) {
-        const result = await supabase
-            .from('leads_free_search')
-            .select('*')
-            .ilike('Rubro', `%${rubro}%`)
-            .limit(searchLimit);
-        leadsData = result.data;
-        error = result.error;
+    if (error || !leadsData || leadsData.length === 0) {
+        console.log(`[Enrichment] No leads found by search_id=${searchId}, falling back to robust search for rubro="${rubro}"`);
+        
+        // 1. Fallback: Accent-insensitive RPC search
+        const { data: rpcLeads, error: rpcError } = await supabase
+            .rpc('search_leads_unaccented', {
+                query_text: rubro,
+                localities_array: localidades,
+                table_name: 'leads_free_search'
+            });
+
+        if (!rpcError && rpcLeads && rpcLeads.length > 0) {
+            leadsData = rpcLeads;
+        } else {
+            // 2. Fallback: text search in rubro (lowercase column)
+            const result = await supabase
+                .from('leads_free_search')
+                .select('*')
+                .textSearch('rubro', rubro, { config: 'spanish', type: 'websearch' })
+                .limit(searchLimit);
+            leadsData = result.data;
+            error = result.error;
+
+            // 3. Fallback: ilike search (broader)
+            if (!error && (!leadsData || leadsData.length === 0)) {
+                const result3 = await supabase
+                    .from('leads_free_search')
+                    .select('*')
+                    .ilike('rubro', `%${rubro}%`)
+                    .limit(searchLimit);
+                leadsData = result3.data;
+                error = result3.error;
+            }
+        }
     }
 
     if (error || !leadsData || leadsData.length === 0) {
-        console.log(`[Enrichment] No leads found for rubro="${rubro}"`);
+        console.log(`[Enrichment] No leads found for rubro="${rubro}" even with fallback`);
         return [];
     }
 
@@ -131,6 +173,8 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         );
     });
 
+    // Balanced filtering: Use strictly filtered leads if available,
+    // otherwise fallback to rubro-matched leads from the same overall search area.
     const candidates = filtered.length > 0 ? filtered : leadsData;
 
     const uniqueMap = new Map<string, Record<string, unknown>>();
@@ -139,9 +183,9 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         const key = readString(rec, 'id') || `${readString(rec, 'Nombre', 'nombre')}|${readString(rec, 'Localidad', 'localidad')}`;
 
         // SKIP logic: if it already has an email, phone AND some social, we consider it "enriched enough"
-        const hasEmail = !!readString(rec, 'email', 'Email');
-        const hasPhone = !!readString(rec, 'whatsapp', 'telefono', 'Telefono');
-        const hasSocial = !!(readString(rec, 'instagram') || readString(rec, 'facebook', 'Facebook'));
+        const hasEmail = isAvailable(readString(rec, 'email', 'Email'));
+        const hasPhone = isAvailable(readString(rec, 'whatsapp', 'telefono', 'Telefono'));
+        const hasSocial = isAvailable(readString(rec, 'instagram')) || isAvailable(readString(rec, 'facebook', 'Facebook'));
 
         if (hasEmail && hasPhone && hasSocial) {
             console.log(`[Consolidation] Lead "${readString(rec, 'Nombre', 'nombre')}" skipped (already has email, phone, and social).`);

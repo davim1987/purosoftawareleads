@@ -67,37 +67,43 @@ export async function POST(req: NextRequest) {
                         }
                     });
 
-                    // Trigger enrichment (replaces n8n deep scrape)
+                    // Try direct delivery first if leads already exist in DB
                     try {
-                        const result = await startEnrichment(finalSearchId);
-                        console.log(`[MP Webhook] Enrichment: jobId=${result.jobId}, ok=${result.ok}, skipped=${result.skipped || false}`);
+                        const { hasDeliverableLeads } = await import('@/lib/enrichment');
+                        const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
 
-                        if (!result.ok && result.message === 'No businesses found for enrichment') {
-                            console.log('[MP Webhook] No businesses for enrichment, triggering direct delivery');
-                            const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
-                            await deliverOrderBySearchId(finalSearchId);
-                        } else if (result.ok) {
-                            await upsertOrder({
-                                searchId: finalSearchId,
-                                deliveryStatus: 'processing',
-                                source: 'mp_webhook',
-                                metadata: {
-                                    enrichment_job_id: result.jobId,
-                                    enrichment_queue_status: result.skipped ? 'skipped_existing' : 'queued'
-                                }
-                            });
+                        if (await hasDeliverableLeads(finalSearchId)) {
+                            console.log('[MP Webhook] Leads found in DB, delivering directly');
+                            const deliveryResult = await deliverOrderBySearchId(finalSearchId);
+                            console.log(`[MP Webhook] Direct delivery: ok=${deliveryResult.ok}, msg=${deliveryResult.message}`);
                         } else {
-                            await upsertOrder({
-                                searchId: finalSearchId,
-                                deliveryStatus: 'pending',
-                                source: 'mp_webhook',
-                                metadata: {
-                                    enrichment_queue_error: result.message || 'unknown queue error'
-                                }
-                            });
+                            console.log('[MP Webhook] No leads in DB, calling enrichment worker');
+                            const result = await startEnrichment(finalSearchId);
+                            console.log(`[MP Webhook] Enrichment: jobId=${result.jobId}, ok=${result.ok}, skipped=${result.skipped || false}`);
+
+                            if (result.ok) {
+                                await upsertOrder({
+                                    searchId: finalSearchId,
+                                    deliveryStatus: 'processing',
+                                    source: 'mp_webhook',
+                                    metadata: {
+                                        enrichment_job_id: result.jobId,
+                                        enrichment_queue_status: result.skipped ? 'skipped_existing' : 'queued'
+                                    }
+                                });
+                            } else {
+                                await upsertOrder({
+                                    searchId: finalSearchId,
+                                    deliveryStatus: 'pending',
+                                    source: 'mp_webhook',
+                                    metadata: {
+                                        enrichment_queue_error: result.message || 'unknown queue error'
+                                    }
+                                });
+                            }
                         }
                     } catch (enrichError) {
-                        console.error('[MP Webhook] Enrichment trigger failed:', enrichError);
+                        console.error('[MP Webhook] Delivery/enrichment failed:', enrichError);
                         await upsertOrder({
                             searchId: finalSearchId,
                             deliveryStatus: 'pending',

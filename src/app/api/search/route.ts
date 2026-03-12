@@ -83,58 +83,77 @@ export async function POST(req: NextRequest) {
 
         let leads: RawDbRow[] = [];
         let totalCountFromDB = 0;
+        const searchId = crypto.randomUUID();
+        const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
+
+        // Step 0: Always Geolocate to ensure correct coordinates for checkout/delivery
+        let validCoordsMap: Record<string, { lat: number; lon: number }> = {};
+        try {
+            console.log(`[Search API] Geolocating ${localidades.length} localities for search ${searchId}...`);
+            const coordsResults = await Promise.all(localidades.map((loc) => getGeolocation(loc, provincia || '')));
+            const validLocs = localidades.filter((_, idx) => coordsResults[idx] !== null);
+            const validCoords = coordsResults.filter((c): c is { lat: number; lon: number } => c !== null);
+
+            validLocs.forEach((loc, idx) => {
+                validCoordsMap[loc] = validCoords[idx];
+            });
+
+            if (validLocs.length === 0) {
+                return NextResponse.json({ error: 'No se pudo geolocalizar ninguna localidad en Argentina.' }, { status: 400 });
+            }
+        } catch (geoErr) {
+            console.error('Geolocation pre-check error:', geoErr);
+        }
 
         // Step A: Search DB (Check if we have results for ALL combined)
         try {
-            const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
             const targetTable = isFullRequest ? 'leads_google_maps' : 'leads_free_search';
-            let { data: dbLeads } = await supabase
-                .from(targetTable)
-                .select('*')
-                .textSearch('rubro', rubro, { config: 'spanish', type: 'websearch' })
-                .in('localidad', localidades);
-
-            if (!dbLeads || dbLeads.length === 0) {
-                const { data: ilikeLeads } = await supabase
-                    .from(targetTable)
-                    .select('*')
-                    .ilike('rubro', `%${rubro}%`)
-                    .in('localidad', localidades);
-                if (ilikeLeads) dbLeads = ilikeLeads;
-            }
+            
+            const { data: dbLeads, error: dbErr } = await supabase
+                .rpc('search_leads_unaccented', {
+                    query_text: rubro,
+                    localities_array: localidades,
+                    table_name: targetTable
+                });
 
             if (dbLeads && dbLeads.length > 0) {
                 leads = dbLeads as RawDbRow[];
                 totalCountFromDB = dbLeads.length;
+            } else if (dbErr) {
+                console.error('RPC search error:', dbErr);
+                let { data: traditionalLeads } = await supabase
+                    .from(targetTable)
+                    .select('*')
+                    .textSearch('rubro', rubro, { config: 'spanish', type: 'websearch' })
+                    .in('localidad', localidades);
+
+                if (!traditionalLeads || traditionalLeads.length === 0) {
+                    const { data: ilikeLeads } = await supabase
+                        .from(targetTable)
+                        .select('*')
+                        .ilike('rubro', `%${rubro}%`)
+                        .in('localidad', localidades);
+                    if (ilikeLeads) traditionalLeads = ilikeLeads;
+                }
+
+                if (traditionalLeads && traditionalLeads.length > 0) {
+                    leads = traditionalLeads as RawDbRow[];
+                    totalCountFromDB = traditionalLeads.length;
+                }
             }
         } catch (dbErr) {
             console.error('DB query error:', dbErr);
         }
 
-        // Step B: Bot Fallback (Parallel Execution)
+        // Step B: If no results in DB, trigger Bot Fallback
         if (leads.length === 0) {
             const botBaseUrl = process.env.NEXT_PUBLIC_BOT_API_URL || 'https://gmaps-simple-scraper.puro.software';
-            const searchId = crypto.randomUUID();
 
             try {
-                // 1. Parallel Geolocation for ALL localities
-                console.log(`[Parallel Search] Geolocating ${localidades.length} localities...`);
-                const coordsResults = await Promise.all(localidades.map((loc) => getGeolocation(loc, provincia || '')));
+                const validLocs = Object.keys(validCoordsMap);
+                const validCoords = Object.values(validCoordsMap);
 
-                const validLocs = localidades.filter((_, idx) => coordsResults[idx] !== null);
-                const validCoords = coordsResults.filter((c): c is { lat: number; lon: number } => c !== null);
-
-                // Create a mapping of locality name -> coordinates for the webhook
-                const validCoordsMap: Record<string, { lat: number; lon: number }> = {};
-                validLocs.forEach((loc, idx) => {
-                    validCoordsMap[loc] = validCoords[idx];
-                });
-
-                if (validLocs.length === 0) {
-                    throw new Error('No se pudo geolocalizar ninguna localidad.');
-                }
-
-                // Create initial tracking record (without bot_job_id yet)
+                // Create initial tracking record
                 await supabase.from('search_tracking').upsert({
                     id: searchId,
                     status: `Geolocalizando ${validLocs.length} zonas...`,
@@ -143,8 +162,11 @@ export async function POST(req: NextRequest) {
                     provincia: provincia || 'Buenos Aires'
                 });
 
-                // 2. Launch Jobs and store IDs (No more background polling here!)
+                // 2. Launch Jobs
                 console.log(`[Parallel Search] Launching ${validLocs.length} bot jobs...`);
+                // Use httpsAgent only if defined
+                const agent = typeof httpsAgent !== 'undefined' ? httpsAgent : undefined;
+                
                 const jobRequests = validCoords.map((coords, idx) => {
                     const payload = {
                         name: `P-${searchId.substring(0, 4)}-${validLocs[idx].substring(0, 5)}`,
@@ -158,7 +180,7 @@ export async function POST(req: NextRequest) {
                         depth: 5,
                         max_time: 3600
                     };
-                    return axios.post(`${botBaseUrl}/api/v1/jobs`, payload, { httpsAgent });
+                    return axios.post(`${botBaseUrl}/api/v1/jobs`, payload, { httpsAgent: agent });
                 });
 
                 const jobResponses = await Promise.all(jobRequests);
@@ -170,8 +192,6 @@ export async function POST(req: NextRequest) {
                     })
                     .filter((id): id is string => Boolean(id));
                 const botJobIdString = actualJobIds.join(', ');
-
-                console.log(`[Parallel Search] Stored bot job IDs: ${botJobIdString}. Polling will happen in /api/search/status`);
 
                 await supabase.from('search_tracking').update({
                     status: `Procesando (0/${validLocs.length})...`,
@@ -186,7 +206,29 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Case: Leads found in DB
+        // Case C: Leads found in DB - Create Tracking Record anyway!
+        try {
+            await supabase.from('search_tracking').upsert({
+                id: searchId,
+                status: 'completed',
+                rubro,
+                localidad: localidades.join(', '),
+                provincia: provincia || 'Buenos Aires',
+                total_leads: totalCountFromDB,
+                results: [] 
+            });
+            // Tag found leads with this search_id so enrichment/delivery can find them
+            const leadIds = leads.map(l => (l as Record<string, unknown>).id).filter(Boolean) as string[];
+            if (leadIds.length > 0) {
+                await supabase
+                    .from('leads_free_search')
+                    .update({ search_id: searchId })
+                    .in('id', leadIds);
+            }
+        } catch (trackErr) {
+            console.error('Error creating tracking for DB hit:', trackErr);
+        }
+
         const getQualityScore = (lead: RawDbRow) => {
             let score = 0;
             if (readString(lead, 'email', 'Email')) score += 10;
@@ -212,15 +254,18 @@ export async function POST(req: NextRequest) {
                 horario: readString(lead, 'horario', 'Horario', 'opening_hours')
             };
 
-            // Enhance socials for DB leads if missing
             if (!mapped.instagram) mapped.instagram = extractSocialHandle(mapped.web, 'instagram');
             if (!mapped.facebook) mapped.facebook = extractSocialHandle(mapped.web, 'facebook');
 
             return mapped;
         });
 
-        const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
-        if (isFullRequest) return NextResponse.json({ count: totalCountFromDB, leads: mappedLeads });
+        if (isFullRequest) return NextResponse.json({ 
+            count: totalCountFromDB, 
+            leads: mappedLeads, 
+            searchId,
+            coords: validCoordsMap // Ensured we always return actual coordinates
+        });
 
         const maskedLeads = mappedLeads.slice(0, 5).map((lead) => ({
             ...lead,
@@ -230,7 +275,12 @@ export async function POST(req: NextRequest) {
             facebook: maskSocial(lead.facebook || '')
         }));
 
-        return NextResponse.json({ count: totalCountFromDB, leads: maskedLeads });
+        return NextResponse.json({ 
+            count: totalCountFromDB, 
+            leads: maskedLeads, 
+            searchId,
+            coords: validCoordsMap // Ensured we always return actual coordinates
+        });
     } catch (error) {
         console.error('Search API error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

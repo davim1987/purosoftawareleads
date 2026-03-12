@@ -385,36 +385,60 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     let leadsData: LeadRow[] = [];
     let leadsError: unknown = null;
 
-    // 1) Primary attempt: rubro (lowercase column)
+    // 0) Absolute Primary: lookup by search_id (guaranteed match for new leads)
     {
         const result = await supabase
             .from('leads_free_search')
             .select('*')
-            .ilike('rubro', `%${order.rubro}%`)
+            .eq('search_id', searchId)
             .limit(searchLimit);
         leadsData = (result.data || []) as LeadRow[];
         leadsError = result.error;
     }
 
-    // 2) Fallback: rubro (capitalized column)
+    // Fallbacks if search_id yields nothing (for legacy leads or direct DB hits)
     if (!leadsError && leadsData.length === 0) {
-        const result = await supabase
-            .from('leads_free_search')
-            .select('*')
-            .ilike('Rubro', `%${order.rubro}%`)
-            .limit(searchLimit);
-        leadsData = (result.data || []) as LeadRow[];
-        leadsError = result.error;
-    }
+        // 1) Primary Fallback: Accent-insensitive RPC search
+        const { data: rpcLeads, error: rpcError } = await supabase
+            .rpc('search_leads_unaccented', {
+                query_text: order.rubro,
+                localities_array: localidades,
+                table_name: 'leads_free_search'
+            });
 
-    // 3) Last resort: fetch broad sample and filter in code
-    if (!leadsError && leadsData.length === 0) {
-        const result = await supabase
-            .from('leads_free_search')
-            .select('*')
-            .limit(searchLimit);
-        leadsData = (result.data || []) as LeadRow[];
-        leadsError = result.error;
+        if (!rpcError && rpcLeads && rpcLeads.length > 0) {
+            leadsData = rpcLeads as LeadRow[];
+        } else {
+            // 2) Traditional Fallback: rubro (lowercase column)
+            const result = await supabase
+                .from('leads_free_search')
+                .select('*')
+                .textSearch('rubro', order.rubro, { config: 'spanish', type: 'websearch' })
+                .limit(searchLimit);
+            leadsData = (result.data || []) as LeadRow[];
+            leadsError = result.error;
+
+            // 3) Fallback: ilike (handles accents)
+            if (!leadsError && leadsData.length === 0) {
+                const result3 = await supabase
+                    .from('leads_free_search')
+                    .select('*')
+                    .ilike('rubro', `%${order.rubro}%`)
+                    .limit(searchLimit);
+                leadsData = (result3.data || []) as LeadRow[];
+                leadsError = result3.error;
+            }
+        }
+
+        // 4) Last resort: fetch broad sample and filter in code
+        if (!leadsError && leadsData.length === 0) {
+            const result4 = await supabase
+                .from('leads_free_search')
+                .select('*')
+                .limit(searchLimit);
+            leadsData = (result4.data || []) as LeadRow[];
+            leadsError = result4.error;
+        }
     }
 
     if (leadsError || !leadsData || leadsData.length === 0) {
@@ -446,11 +470,19 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
 
     // If locality labels differ (e.g. order "Vicente Lopez" but lead locality "Olivos"),
     // do not fail delivery when we still have valid rubro-matched leads.
+    // If rubro matched but locality didn't, we still favor the rubro match to avoid "No leads found".
+    // Balanced filtering: Favor strict locality matches, but fallback to rubro-only matches
+    // if naming discrepancies (e.g. Escobar vs Zarate) would otherwise cause total failure.
     const candidateLeads = filteredLeads.length > 0 ? filteredLeads : rubroMatchedLeads;
 
     if (candidateLeads.length === 0) {
-        await setDeliveryState(searchId, 'failed', { delivery_error: 'No leads found for order criteria' });
-        return { ok: false, message: 'No leads found for order criteria' };
+        // Broaden search to ANY leads if rubro search returned nothing (unlikely due to previous search success)
+        if (leadsData.length > 0) {
+            candidateLeads.push(...leadsData.slice(0, order.quantity_paid));
+        } else {
+            await setDeliveryState(searchId, 'failed', { delivery_error: 'No leads found for order criteria' });
+            return { ok: false, message: 'No leads found for order criteria' };
+        }
     }
 
     const uniqueMap = new Map<string, LeadRow>();
@@ -461,9 +493,8 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
         if (!uniqueMap.has(key)) uniqueMap.set(key, lead);
     }
 
-    // Sort leads to prioritize those with contact information
-    const allUniqueLeads = Array.from(uniqueMap.values());
-    const sortedLeads = allUniqueLeads.sort((a, b) => {
+    // Sort unique leads only by score initially (to preserve global ranking for fallbacks)
+    const allUniqueLeads = Array.from(uniqueMap.values()).sort((a, b) => {
         const scoreA = (readString(a, 'email', 'Email') ? 2 : 0) +
             (readString(a, 'whatsapp', 'telefono', 'Telefono') ? 2 : 0) +
             (readString(a, 'web', 'Web') ? 1 : 0) +
@@ -477,7 +508,47 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
         return scoreB - scoreA;
     });
 
-    const selectedLeads = sortedLeads.slice(0, Math.max(1, order.quantity_paid));
+    // Balanced selection logic (Surtido)
+    const quantityToDeliver = Math.max(1, order.quantity_paid);
+    const selectedLeads: LeadRow[] = [];
+    const leadsByLocality = new Map<string, LeadRow[]>();
+    
+    // Group sorted leads by locality
+    for (const lead of allUniqueLeads) {
+        const loc = normalizeText(readString(lead, 'localidad', 'Localidad')) || 'sin_localidad';
+        if (!leadsByLocality.has(loc)) leadsByLocality.set(loc, []);
+        leadsByLocality.get(loc)!.push(lead);
+    }
+
+    const availableLocs = Array.from(leadsByLocality.keys());
+    const targetPerLoc = Math.floor(quantityToDeliver / Math.max(1, availableLocs.length));
+    
+    // Step 1: Minimum quota per locality
+    const pickedIds = new Set<string>();
+    for (const loc of availableLocs) {
+        const pool = leadsByLocality.get(loc)!;
+        const take = Math.min(targetPerLoc, pool.length);
+        for (let i = 0; i < take; i++) {
+            const lead = pool[i];
+            const id = readString(lead, 'id') || `${readString(lead, 'nombre', 'Nombre')}_${readString(lead, 'localidad', 'Localidad')}`;
+            selectedLeads.push(lead);
+            pickedIds.add(id);
+        }
+    }
+
+    // Step 2: Fill remaining slots from best available leads across all localities
+    let remainingCount = quantityToDeliver - selectedLeads.length;
+    if (remainingCount > 0) {
+        for (const lead of allUniqueLeads) {
+            if (remainingCount <= 0) break;
+            const id = readString(lead, 'id') || `${readString(lead, 'nombre', 'Nombre')}_${readString(lead, 'localidad', 'Localidad')}`;
+            if (!pickedIds.has(id)) {
+                selectedLeads.push(lead);
+                pickedIds.add(id);
+                remainingCount--;
+            }
+        }
+    }
 
     // Fetch enrichment data globally by business IDs
     const businessIds = selectedLeads.map(l => readString(l, 'id')).filter(Boolean);

@@ -12,15 +12,40 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Missing search ID' }, { status: 400 });
         }
 
-        const { data: initialData, error: initialError } = await supabase
-            .from('search_tracking')
-            .select('*')
-            .eq('id', searchId)
-            .single();
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(searchId);
+        let initialData = null;
+        let initialError = null;
 
-        if (initialError || !initialData) {
+        if (isUUID) {
+            const { data, error } = await supabase
+                .from('search_tracking')
+                .select('*')
+                .eq('id', searchId)
+                .single();
+            initialData = data;
+            initialError = error;
+        }
+
+        if (!initialData) {
             if (initialError) console.error('[Status API] Database error for searchId:', searchId, initialError);
-            else console.log('[Status API] Search record not found for searchId:', searchId);
+            
+            // Try fallback to order status if search_tracking not found
+            const { data: orderFallback } = await supabase
+                .from('orders')
+                .select('delivery_status, rubro, localidades')
+                .eq('search_id', searchId)
+                .maybeSingle();
+
+            if (orderFallback) {
+                return NextResponse.json({
+                    status: 'processing', // Default status if order exists but tracking doesn't
+                    rubro: orderFallback.rubro,
+                    localidades: orderFallback.localidades || [],
+                    deliveryStatus: orderFallback.delivery_status
+                });
+            }
+
+            console.log('[Status API] Search record not found for searchId:', searchId);
             return NextResponse.json({ status: 'not_found' });
         }
 

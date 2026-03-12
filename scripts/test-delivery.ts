@@ -1,12 +1,13 @@
-import { deliverOrderBySearchId } from '../src/lib/order-delivery';
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load .env.local
+// Load .env.local BEFORE other imports to ensure supabase client gets correct env
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
+import { deliverOrderBySearchId } from '../src/lib/order-delivery';
+
 async function run() {
-    const searchId = 'SEARCH-1773167143578-php79rj';
+    const searchId = 'c85ecb69-1ec2-4b3c-aeb1-7dd862dc7ca8';
     console.log(`[Test] Triggering delivery for searchId: ${searchId}`);
 
     try {

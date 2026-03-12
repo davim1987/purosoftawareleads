@@ -49,12 +49,21 @@ export async function POST(req: NextRequest) {
                     }
                 });
 
-                // Trigger enrichment
+                // Try direct delivery first, fall back to enrichment worker
                 try {
-                    console.log(`[Webhook] Triggering enrichment for ${searchId}`);
-                    await startEnrichment(searchId);
+                    const { hasDeliverableLeads } = await import('@/lib/enrichment');
+                    const { deliverOrderBySearchId } = await import('@/lib/order-delivery');
+
+                    if (await hasDeliverableLeads(searchId)) {
+                        console.log(`[Webhook] Leads found in DB for ${searchId}, delivering directly`);
+                        const deliveryResult = await deliverOrderBySearchId(searchId);
+                        console.log(`[Webhook] Direct delivery: ok=${deliveryResult.ok}, msg=${deliveryResult.message}`);
+                    } else {
+                        console.log(`[Webhook] No leads in DB for ${searchId}, calling enrichment worker`);
+                        await startEnrichment(searchId);
+                    }
                 } catch (e) {
-                    console.error('[Webhook] Enrichment trigger failed:', e);
+                    console.error('[Webhook] Delivery/enrichment failed:', e);
                 }
             }
         }

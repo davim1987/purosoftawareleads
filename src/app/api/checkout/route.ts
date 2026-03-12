@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
         const { searchId, amount, clientPhone, clientEmail, quantity = 1, rubro, provincia, localidades, coords } = body;
 
         // Generate searchId server-side if not provided
-        const finalSearchId = searchId || `SEARCH-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        const finalSearchId = searchId || crypto.randomUUID();
         const preference = new Preference(client);
 
         const qty = Math.max(1, Number(quantity) || 1);
