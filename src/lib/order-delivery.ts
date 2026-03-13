@@ -430,15 +430,7 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
             }
         }
 
-        // 4) Last resort: fetch broad sample and filter in code
-        if (!leadsError && leadsData.length === 0) {
-            const result4 = await supabase
-                .from('leads_free_search')
-                .select('*')
-                .limit(searchLimit);
-            leadsData = (result4.data || []) as LeadRow[];
-            leadsError = result4.error;
-        }
+        // Last resort removed: never fetch leads without rubro/locality filters
     }
 
     if (leadsError || !leadsData || leadsData.length === 0) {
@@ -468,21 +460,13 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
         );
     });
 
-    // If locality labels differ (e.g. order "Vicente Lopez" but lead locality "Olivos"),
-    // do not fail delivery when we still have valid rubro-matched leads.
-    // If rubro matched but locality didn't, we still favor the rubro match to avoid "No leads found".
-    // Balanced filtering: Favor strict locality matches, but fallback to rubro-only matches
-    // if naming discrepancies (e.g. Escobar vs Zarate) would otherwise cause total failure.
-    const candidateLeads = filteredLeads.length > 0 ? filteredLeads : rubroMatchedLeads;
+    // STRICT: Only use leads that match the requested localities.
+    // No fallback to unfiltered leads - prevents mixing wrong localities.
+    const candidateLeads = filteredLeads;
 
     if (candidateLeads.length === 0) {
-        // Broaden search to ANY leads if rubro search returned nothing (unlikely due to previous search success)
-        if (leadsData.length > 0) {
-            candidateLeads.push(...leadsData.slice(0, order.quantity_paid));
-        } else {
-            await setDeliveryState(searchId, 'failed', { delivery_error: 'No leads found for order criteria' });
-            return { ok: false, message: 'No leads found for order criteria' };
-        }
+        await setDeliveryState(searchId, 'failed', { delivery_error: 'No leads match requested localities' });
+        return { ok: false, message: 'No leads found for requested localities' };
     }
 
     const uniqueMap = new Map<string, LeadRow>();
@@ -521,15 +505,14 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     }
 
     const availableLocs = Array.from(leadsByLocality.keys());
-    const targetPerLoc = Math.floor(quantityToDeliver / Math.max(1, availableLocs.length));
     
-    // Step 1: Minimum quota per locality
+    // Step 1: Round-robin 1 per locality, guaranteeing each zone gets at least 1 contact
     const pickedIds = new Set<string>();
     for (const loc of availableLocs) {
+        if (selectedLeads.length >= quantityToDeliver) break;
         const pool = leadsByLocality.get(loc)!;
-        const take = Math.min(targetPerLoc, pool.length);
-        for (let i = 0; i < take; i++) {
-            const lead = pool[i];
+        if (pool.length > 0) {
+            const lead = pool[0]; // Best quality (already sorted by score)
             const id = readString(lead, 'id') || `${readString(lead, 'nombre', 'Nombre')}_${readString(lead, 'localidad', 'Localidad')}`;
             selectedLeads.push(lead);
             pickedIds.add(id);

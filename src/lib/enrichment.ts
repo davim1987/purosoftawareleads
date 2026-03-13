@@ -206,7 +206,46 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         if (!uniqueMap.has(key)) uniqueMap.set(key, rec);
     }
 
-    const uniqueLeads = Array.from(uniqueMap.values()).slice(0, enrichmentCap);
+    // Round-robin distribution by locality (surtido) - ensures all localities get representation
+    const byLocality = new Map<string, Record<string, unknown>[]>();
+    for (const lead of uniqueMap.values()) {
+        const loc = normalizeText(readString(lead, 'Localidad', 'localidad')) || 'sin_localidad';
+        if (!byLocality.has(loc)) byLocality.set(loc, []);
+        byLocality.get(loc)!.push(lead);
+    }
+
+    // Sort each locality pool by data quality (most complete first)
+    for (const [, pool] of byLocality) {
+        pool.sort((a, b) => {
+            const score = (rec: Record<string, unknown>) =>
+                (isAvailable(readString(rec, 'email', 'Email')) ? 2 : 0) +
+                (isAvailable(readString(rec, 'whatsapp', 'telefono')) ? 2 : 0) +
+                (isAvailable(readString(rec, 'web', 'Web')) ? 1 : 0) +
+                (isAvailable(readString(rec, 'instagram')) ? 1 : 0);
+            return score(b) - score(a);
+        });
+    }
+
+    // Round-robin pick across localities
+    const uniqueLeads: Record<string, unknown>[] = [];
+    const locKeys = Array.from(byLocality.keys());
+    const locIndexes = new Map(locKeys.map(k => [k, 0]));
+    while (uniqueLeads.length < enrichmentCap) {
+        let added = false;
+        for (const loc of locKeys) {
+            if (uniqueLeads.length >= enrichmentCap) break;
+            const pool = byLocality.get(loc)!;
+            const idx = locIndexes.get(loc)!;
+            if (idx < pool.length) {
+                uniqueLeads.push(pool[idx]);
+                locIndexes.set(loc, idx + 1);
+                added = true;
+            }
+        }
+        if (!added) break;
+    }
+
+    console.log(`[Enrichment] Balanced selection: ${uniqueLeads.length} leads across ${locKeys.length} localities [${locKeys.join(', ')}]`);
 
     return uniqueLeads.map((lead) => ({
         id: readString(lead, 'id') || `${readString(lead, 'Nombre', 'nombre')}_${readString(lead, 'Localidad', 'localidad')}`,
