@@ -412,7 +412,148 @@ function normalizeLocalidadLabel(localidad: string) {
     return trimmed;
 }
 
+// Detect email provider for smart redirect
+function getEmailProvider(email: string): { name: string; url: string; icon: string } {
+    const domain = (email.split('@')[1] || '').toLowerCase();
+    if (domain.includes('gmail')) return { name: 'Abrir Gmail', url: 'https://mail.google.com', icon: 'gmail' };
+    if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live'))
+        return { name: 'Abrir Outlook', url: 'https://outlook.live.com', icon: 'outlook' };
+    if (domain.includes('yahoo')) return { name: 'Abrir Yahoo Mail', url: 'https://mail.yahoo.com', icon: 'yahoo' };
+    if (domain.includes('icloud') || domain.includes('me.com'))
+        return { name: 'Abrir iCloud Mail', url: 'https://www.icloud.com/mail', icon: 'icloud' };
+    if (domain.includes('proton')) return { name: 'Abrir ProtonMail', url: 'https://mail.proton.me', icon: 'proton' };
+    return { name: 'Revisar mi Email', url: `https://mail.google.com`, icon: 'generic' };
+}
 
+// Confetti colors
+const CONFETTI_COLORS = ['#3B82F6', '#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
+
+function SuccessModal({
+    quantity,
+    email,
+    rubro,
+    localidades,
+    onNewSearch,
+    onClose
+}: {
+    quantity: number;
+    email: string;
+    rubro: string;
+    localidades: string[];
+    onNewSearch: () => void;
+    onClose: () => void;
+}) {
+    const provider = getEmailProvider(email);
+
+    // Generate confetti pieces
+    const confettiPieces = React.useMemo(() =>
+        Array.from({ length: 40 }, (_, i) => ({
+            id: i,
+            left: Math.random() * 100,
+            delay: Math.random() * 2,
+            duration: 2 + Math.random() * 2,
+            color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+            size: 4 + Math.random() * 8,
+            rotation: Math.random() * 360,
+        })),
+    []);
+
+    return (
+        <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
+
+            {/* Confetti layer */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none z-[71]">
+                {confettiPieces.map((piece) => (
+                    <div
+                        key={piece.id}
+                        className="absolute animate-confetti-fall"
+                        style={{
+                            left: `${piece.left}%`,
+                            top: '-20px',
+                            width: `${piece.size}px`,
+                            height: `${piece.size * 1.5}px`,
+                            backgroundColor: piece.color,
+                            borderRadius: piece.size > 8 ? '2px' : '50%',
+                            animationDelay: `${piece.delay}s`,
+                            animationDuration: `${piece.duration}s`,
+                            transform: `rotate(${piece.rotation}deg)`,
+                        }}
+                    />
+                ))}
+            </div>
+
+            {/* Modal */}
+            <div className="relative z-[72] bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-md w-full p-8 animate-scale-up border border-gray-100 dark:border-gray-800">
+                {/* Close X */}
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-5 text-gray-300 hover:text-gray-500 dark:hover:text-gray-100 text-2xl font-light transition cursor-pointer w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                    &times;
+                </button>
+
+                {/* Success icon with glow */}
+                <div className="mx-auto w-20 h-20 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mb-5 shadow-lg shadow-emerald-500/20 animate-bounce-once">
+                    <BiCheckShield className="text-emerald-500 text-4xl" />
+                </div>
+
+                <h2 className="text-2xl font-black text-center text-gray-900 dark:text-white mb-1 tracking-tight">
+                    Felicitaciones!
+                </h2>
+                <p className="text-center text-sm text-gray-500 dark:text-gray-400 mb-5">
+                    Tu compra fue procesada con exito
+                </p>
+
+                {/* Purchase details card */}
+                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-4 mb-6 border border-gray-100 dark:border-gray-700/50">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Contactos</span>
+                        <span className="text-lg font-black text-blue-600 dark:text-blue-400">{quantity}</span>
+                    </div>
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rubro</span>
+                        <span className="text-sm font-bold text-gray-800 dark:text-gray-200 capitalize">{rubro}</span>
+                    </div>
+                    {localidades.length > 0 && (
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Zona</span>
+                            <span className="text-sm font-bold text-gray-800 dark:text-gray-200 text-right max-w-[200px] truncate">
+                                {localidades.slice(0, 3).join(', ')}{localidades.length > 3 ? ` +${localidades.length - 3}` : ''}
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                <p className="text-center text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    Enviamos tus <span className="font-bold text-blue-600 dark:text-blue-400">{quantity} contactos</span> a{' '}
+                    <span className="font-bold text-gray-900 dark:text-white">{email}</span>
+                </p>
+
+                <div className="flex flex-col gap-3">
+                    <a
+                        href={provider.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full px-6 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-center rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
+                    >
+                        <FaEnvelope /> {provider.name}
+                    </a>
+                    <button
+                        onClick={() => { onClose(); onNewSearch(); }}
+                        className="w-full px-6 py-3.5 border-2 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-bold text-center rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+                    >
+                        <FaSearch /> Nueva Busqueda
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 function LeadsApp() {
     const [rubro, setRubro] = useState('');
@@ -443,6 +584,7 @@ function LeadsApp() {
     const [detectedPaymentId, setDetectedPaymentId] = useState<string | null>(null);
     const [deliveryStatus, setDeliveryStatus] = useState<string | null>('pending');
     const [visualProgress, setVisualProgress] = useState(0);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
 
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -761,6 +903,13 @@ function LeadsApp() {
                             setIsProcessing(false);
                             setIsLoading(false);
                             setError(null);
+
+                            // Show success modal when delivery is confirmed
+                            const finalDelivery = statusRes.data.deliveryStatus || deliveryStatus;
+                            if (finalDelivery === 'sent') {
+                                setShowSuccessModal(true);
+                            }
+
                             clearInterval(timer);
                             return;
                         }
@@ -784,13 +933,24 @@ function LeadsApp() {
         };
     }, [isProcessing, searchId, rubro, provincia, localidades, pollCount, downloadToken]);
 
+    // Trigger success modal if deliveryStatus changes to 'sent' via webhook while still processing
+    const hasShownSuccessRef = React.useRef(false);
     useEffect(() => {
-        // Only auto-scroll during initial search, NOT during enrichment/post-payment
-        const shouldShowProgress = (isLoading || isInitialSearch) && searchStatus !== 'idle';
+        if (deliveryStatus === 'sent' && purchaseSummary && !hasShownSuccessRef.current) {
+            hasShownSuccessRef.current = true;
+            setShowSuccessModal(true);
+        }
+    }, [deliveryStatus, purchaseSummary]);
+
+    useEffect(() => {
+        // Auto-scroll during initial search AND post-payment processing
+        const shouldShowProgress = (isLoading || isInitialSearch || isProcessing) && searchStatus !== 'idle';
         if (!shouldShowProgress || !searchId) return;
 
-        // One-time scroll guard per search phase
-        const scrollKey = `scrolled_${searchId}_search`;
+        // One-time scroll guard per search phase (separate keys for search vs post-payment)
+        const scrollKey = isProcessing
+            ? `scrolled_${searchId}_postpayment`
+            : `scrolled_${searchId}_search`;
         if (sessionStorage.getItem(scrollKey)) return;
 
         const section = progressSectionRef.current;
@@ -810,7 +970,7 @@ function LeadsApp() {
             }, 150);
             return () => clearTimeout(timeoutId);
         }
-    }, [isLoading, isInitialSearch, searchId]); // Only scroll for initial search, not enrichment
+    }, [isLoading, isInitialSearch, isProcessing, searchId, searchStatus]);
 
     // Unified Progress Side-Effect (Smooth Animation)
     const targetProgressRef = React.useRef(0);
@@ -836,12 +996,12 @@ function LeadsApp() {
                 if (target === 0) return 0;
                 // Already at or past target
                 if (prev >= target) return prev;
-                // Smooth increment: faster when far, slower when close
+                // Very smooth increment: slow crawl to target
                 const diff = target - prev;
-                const step = Math.max(1, Math.ceil(diff / 15));
+                const step = Math.max(0.5, Math.ceil(diff / 25));
                 return Math.min(prev + step, target);
             });
-        }, 80);
+        }, 100);
         return () => clearInterval(interval);
     }, []);
 
@@ -849,29 +1009,29 @@ function LeadsApp() {
         // Stop progress on failure
         if (deliveryStatus === 'failed') return 0;
 
-        // ONLY 100% when email is actually delivered OR initial search is done
-        if (deliveryStatus === 'sent' || status === 'completed') return 100;
+        // 100% ONLY when email is actually delivered
+        if (deliveryStatus === 'sent') return 100;
 
-        // Sending email phase -> stay at 98%
-        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 98;
+        // Initial search completed (pre-payment)
+        if (status === 'completed' && !isProcessing) return 100;
 
-        // Enrichment progress -> very slow crawl from 60% to 90%
+        // Sending email phase -> 95%
+        if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 95;
+
+        // Enrichment progress -> slow crawl from 30% to 88%
         if (status.startsWith('enriching_')) {
             const pct = parseInt(status.split('_')[1]) || 0;
-            // Map 0-100 of enrichment to 60-90 of total progress (very slow)
-            return Math.floor(60 + (pct * 0.30));
+            // Map 0-100 of enrichment to 30-88 of total progress
+            return Math.floor(30 + (pct * 0.58));
         }
-
-        // Search completed, waiting for payment/enrichment
-        if (status === 'completed') return 55;
 
         // Base states
         if (status === 'error' || status === 'idle') return 0;
         if (status === 'geolocating') return 5;
 
-        // Verifying payment
-        if (status === 'verifying_payment') return 56;
-        if (status === 'processing_deep') return 58;
+        // Post-payment states (gradual start)
+        if (status === 'verifying_payment') return 8;
+        if (status === 'processing_deep') return 15;
 
         // Initial search progress - Use displayProgress directly up to 95%
         if (displayProgress > 0) {
@@ -1402,6 +1562,18 @@ function LeadsApp() {
                                 />
                             )}
 
+                            {/* Success Modal after delivery */}
+                            {showSuccessModal && purchaseSummary && (
+                                <SuccessModal
+                                    quantity={purchaseSummary.quantity}
+                                    email={purchaseSummary.email}
+                                    rubro={purchaseSummary.rubro || rubro}
+                                    localidades={purchaseSummary.localidades?.length ? purchaseSummary.localidades : localidades}
+                                    onNewSearch={handleResetSearch}
+                                    onClose={() => setShowSuccessModal(false)}
+                                />
+                            )}
+
                         </>
                     );
                 })()}
@@ -1445,6 +1617,32 @@ function LeadsApp() {
         @keyframes fade-in-up {
           0% { opacity: 0; transform: translateY(20px); }
           100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out forwards;
+        }
+        @keyframes fade-in {
+          0% { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        .animate-confetti-fall {
+          animation: confetti-fall linear forwards;
+          opacity: 0;
+        }
+        @keyframes confetti-fall {
+          0% { transform: translateY(-20px) rotate(0deg) scale(1); opacity: 1; }
+          25% { opacity: 1; }
+          50% { transform: translateY(45vh) rotate(360deg) scale(0.9); opacity: 0.8; }
+          100% { transform: translateY(100vh) rotate(720deg) scale(0.3); opacity: 0; }
+        }
+        .animate-bounce-once {
+          animation: bounce-once 0.6s ease-out forwards;
+        }
+        @keyframes bounce-once {
+          0% { transform: scale(0); opacity: 0; }
+          50% { transform: scale(1.2); opacity: 1; }
+          70% { transform: scale(0.9); }
+          100% { transform: scale(1); opacity: 1; }
         }
       `}</style>
             {showLocsModal && (
