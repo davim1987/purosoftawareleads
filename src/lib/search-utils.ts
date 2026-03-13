@@ -326,6 +326,9 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                         }
 
                         const tempId = `temp-${Math.random().toString(36).substring(2, 11)}`;
+                        // Always use the job's target locality (currentLoc) as the lead's locality.
+                        // The bot's 'city' field is unreliable (can return parent district, province, etc.)
+                        // Since this job was launched by coordinates for currentLoc, all results belong to it.
                         const leadObj: SearchLead = {
                             id: isInternal ? tempId : String(pid),
                             nombre: findValue(l, 'title', 'name', 'business name', 'nombre') || 'Nombre Reservado',
@@ -333,23 +336,12 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                             web: website,
                             email: mail || 'No disponible',
                             direccion: findValue(l, 'address', 'complete_address', 'full address', 'formatted_address', 'direccion') || 'No disponible',
-                            localidad: findValue(l, 'city', 'sublocality', 'neighborhood', 'localidad') || currentLoc,
+                            localidad: currentLoc,
                             rubro: findValue(l, 'category', 'type', 'rubro', 'sub_category') || rubro,
                             instagram: ig,
                             facebook: fb,
                             horario: findValue(l, 'opening_hours', 'hours', 'business hours', 'horario') || 'No disponible'
                         };
-
-                        // STRICT LOCALITY FILTERING
-                        const normalizedLeadLoc = normalizeText(leadObj.localidad);
-                        const requestedLocs = validLocs.map(normalizeText);
-                        const isRequestedLocMap = requestedLocs.some(loc =>
-                            normalizedLeadLoc === loc || normalizedLeadLoc.includes(loc) || loc.includes(normalizedLeadLoc)
-                        );
-
-                        if (!isRequestedLocMap) {
-                            return null;
-                        }
 
                         aggregatedLeads.push(leadObj);
 
