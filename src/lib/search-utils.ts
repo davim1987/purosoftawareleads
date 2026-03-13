@@ -231,7 +231,7 @@ export async function getGeolocation(localidad: string, provincia: string) {
  */
 export async function checkBotAndUpdateStatus(searchId: string) {
     try {
-        await logDebug(`Checking status for searchId: ${searchId}`, searchId);
+        console.log(`[Bot] Checking status for searchId: ${searchId}`);
         const { data: trackingData, error: fetchError } = await supabase
             .from('search_tracking')
             .select('*')
@@ -246,12 +246,12 @@ export async function checkBotAndUpdateStatus(searchId: string) {
 
         // Skip if already completed or error
         if (tracking.status === 'completed' || tracking.status === 'error') {
-            await logDebug(`Search ${searchId} already finished with status: ${tracking.status}`, searchId);
+            console.log(`[Bot] Search ${searchId} already finished with status: ${tracking.status}`);
             return tracking;
         }
 
         const botJobIds = tracking.bot_job_id ? tracking.bot_job_id.split(',').map((id: string) => id.trim()) : [];
-        await logDebug(`Found ${botJobIds.length} job IDs for ${searchId}: ${botJobIds.join(', ')}`, searchId);
+        console.log(`[Bot] Found ${botJobIds.length} job IDs for ${searchId}: ${botJobIds.join(', ')}`);
 
         if (botJobIds.length === 0) return tracking;
 
@@ -274,18 +274,18 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                 });
 
                 const jobStatus = (statusResponse.data.Status || statusResponse.data.status || 'pending').toLowerCase();
-                await logDebug(`Job ${jobId} status: ${jobStatus}`, searchId);
+                console.log(`[Bot] Job ${jobId} status: ${jobStatus}`);
 
                 if (['ok', 'completed', 'success', 'finished', 'done'].includes(jobStatus)) {
                     // Download results
                     const csvResponse = await axios.get(`${botBaseUrl}/api/v1/jobs/${jobId}/download`, { httpsAgent });
                     const partLeads = parseCSV(csvResponse.data);
-                    await logDebug(`Downloaded ${partLeads.length} leads for job ${jobId}`, searchId);
+                    console.log(`[Bot] Downloaded ${partLeads.length} leads for job ${jobId}`);
 
                     // DEBUG: Log headers to tracking
                     if (partLeads.length > 0) {
                         const headers = Object.keys(partLeads[0]);
-                        await logDebug(`Job ${jobId} headers: ${headers.join(', ')}`, searchId);
+                    console.log(`[Bot] Job ${jobId} headers: ${headers.join(', ')}`);
                     }
 
                     // Helper for column mapping
@@ -373,7 +373,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                     // INCREMENTAL PERSISTENCE
                     if (jobLeadsToInsert.length > 0) {
                         try {
-                            await logDebug(`Starting incremental persistence for ${jobLeadsToInsert.length} leads in job ${jobId}`, searchId);
+                            console.log(`[Bot] Starting incremental persistence for ${jobLeadsToInsert.length} leads in job ${jobId}`);
                             const pIds = jobLeadsToInsert.map(l => l.place_id).filter(Boolean) as string[];
                             const { data: existing } = await supabase
                                 .from('leads_free_search')
@@ -417,7 +417,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                                     await logDebug(`[Incremental] Upsert Error (PlaceId): ${JSON.stringify(upsertError)}`, searchId);
                                     console.error(`[Incremental] Upsert Error for job ${jobId}:`, upsertError);
                                 } else {
-                                    await logDebug(`[Incremental] Upserted ${withPlaceId.length} leads by place_id`, searchId);
+                                    console.log(`[Bot] Upserted ${withPlaceId.length} leads by place_id`);
                                 }
                             }
 
@@ -430,7 +430,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                                     await logDebug(`[Incremental] Insert Error (Internal): ${JSON.stringify(insertError)}`, searchId);
                                     console.error(`[Incremental] Insert Error for job ${jobId}:`, insertError);
                                 } else {
-                                    await logDebug(`[Incremental] Inserted ${withoutPlaceId.length} internal leads`, searchId);
+                                    console.log(`[Bot] Inserted ${withoutPlaceId.length} internal leads`);
                                 }
                             }
                         } catch (upsertErr: any) {
@@ -440,14 +440,14 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                     }
                     completedCount++;
                 } else if (['failed', 'finished', 'done', 'error'].includes(jobStatus)) {
-                    await logDebug(`Job ${jobId} finished with fail status.`, searchId);
+                    console.log(`[Bot] Job ${jobId} finished with fail status.`);
                     completedCount++;
                 } else {
-                    await logDebug(`Job ${jobId} still running.`, searchId);
+                    console.log(`[Bot] Job ${jobId} still running.`);
                     anyRunning = true;
                 }
             } catch (jobErr: any) {
-                await logDebug(`Error checking job ${jobId}: ${jobErr.message}`, searchId);
+                console.error(`[Bot] Error checking job ${jobId}: ${jobErr.message}`);
                 console.error(`Error checking job ${jobId}:`, jobErr);
                 anyRunning = true;
             }

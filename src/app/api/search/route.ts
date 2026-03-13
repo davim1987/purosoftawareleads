@@ -175,10 +175,10 @@ export async function POST(req: NextRequest) {
                         zoom: 14,
                         lat: coords.lat.toString(),
                         lon: coords.lon.toString(),
-                        fast_mode: false,
+                        fast_mode: true,
                         radius: 5000,
-                        depth: 5,
-                        max_time: 3600
+                        depth: 3,
+                        max_time: 120
                     };
                     return axios.post(`${botBaseUrl}/api/v1/jobs`, payload, { httpsAgent: agent });
                 });
