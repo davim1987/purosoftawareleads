@@ -412,17 +412,20 @@ function normalizeLocalidadLabel(localidad: string) {
     return trimmed;
 }
 
-// Detect email provider for smart redirect
+// Detect email provider for smart redirect - uses authuser param for Gmail to open correct account
 function getEmailProvider(email: string): { name: string; url: string; icon: string } {
     const domain = (email.split('@')[1] || '').toLowerCase();
-    if (domain.includes('gmail')) return { name: 'Abrir Gmail', url: 'https://mail.google.com', icon: 'gmail' };
+    if (domain.includes('gmail'))
+        return { name: 'Abrir Gmail', url: `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(email)}`, icon: 'gmail' };
     if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live'))
-        return { name: 'Abrir Outlook', url: 'https://outlook.live.com', icon: 'outlook' };
-    if (domain.includes('yahoo')) return { name: 'Abrir Yahoo Mail', url: 'https://mail.yahoo.com', icon: 'yahoo' };
+        return { name: 'Abrir Outlook', url: `https://outlook.live.com/mail/0/?login_hint=${encodeURIComponent(email)}`, icon: 'outlook' };
+    if (domain.includes('yahoo'))
+        return { name: 'Abrir Yahoo Mail', url: 'https://mail.yahoo.com', icon: 'yahoo' };
     if (domain.includes('icloud') || domain.includes('me.com'))
         return { name: 'Abrir iCloud Mail', url: 'https://www.icloud.com/mail', icon: 'icloud' };
-    if (domain.includes('proton')) return { name: 'Abrir ProtonMail', url: 'https://mail.proton.me', icon: 'proton' };
-    return { name: 'Revisar mi Email', url: `https://mail.google.com`, icon: 'generic' };
+    if (domain.includes('proton'))
+        return { name: 'Abrir ProtonMail', url: 'https://mail.proton.me', icon: 'proton' };
+    return { name: 'Revisar mi Email', url: `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(email)}`, icon: 'generic' };
 }
 
 // Confetti colors
@@ -585,6 +588,7 @@ function LeadsApp() {
     const [deliveryStatus, setDeliveryStatus] = useState<string | null>('pending');
     const [visualProgress, setVisualProgress] = useState(0);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [successModalReady, setSuccessModalReady] = useState(false);
 
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -911,10 +915,10 @@ function LeadsApp() {
                             setIsLoading(false);
                             setError(null);
 
-                            // Show success modal when delivery is confirmed
+                            // Queue success modal - will show after progress bar reaches 100%
                             const finalDelivery = statusRes.data.deliveryStatus || deliveryStatus;
                             if (finalDelivery === 'sent') {
-                                setShowSuccessModal(true);
+                                setSuccessModalReady(true);
                             }
 
                             clearInterval(timer);
@@ -940,14 +944,23 @@ function LeadsApp() {
         };
     }, [isProcessing, searchId, rubro, provincia, localidades, pollCount, downloadToken]);
 
-    // Trigger success modal if deliveryStatus changes to 'sent' via webhook while still processing
+    // Queue success modal when delivery is confirmed - actual display waits for progress bar
     const hasShownSuccessRef = React.useRef(false);
     useEffect(() => {
         if (deliveryStatus === 'sent' && purchaseSummary && !hasShownSuccessRef.current) {
             hasShownSuccessRef.current = true;
-            setShowSuccessModal(true);
+            setSuccessModalReady(true);
         }
     }, [deliveryStatus, purchaseSummary]);
+
+    // Only show success modal AFTER the progress bar visually reaches 100%
+    useEffect(() => {
+        if (successModalReady && visualProgress >= 100 && !showSuccessModal) {
+            // Small delay so the user sees 100% before the modal pops
+            const timeout = setTimeout(() => setShowSuccessModal(true), 800);
+            return () => clearTimeout(timeout);
+        }
+    }, [successModalReady, visualProgress, showSuccessModal]);
 
     useEffect(() => {
         // Auto-scroll during initial search AND post-payment processing
