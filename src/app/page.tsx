@@ -1467,32 +1467,7 @@ function LeadsApp() {
                                 </p>
                             </div>
 
-                            {purchaseSummary && (
-                                <div className="bg-white border border-blue-100 rounded-2xl p-5 md:p-6 shadow-sm">
-                                    <h4 className="text-blue-900 font-black text-sm md:text-base uppercase tracking-wide mb-3">
-                                        Resumen de tu compra
-                                    </h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-700">
-                                        <p><span className="font-bold">Rubro:</span> {purchaseSummary.rubro || rubro}</p>
-                                        <p><span className="font-bold">Provincia:</span> {purchaseSummary.provincia || provincia}</p>
-                                        <p><span className="font-bold">Cantidad:</span> {purchaseSummary.quantity} contactos</p>
-                                        <p><span className="font-bold">Total pagado:</span> $ {purchaseSummary.amount.toLocaleString('es-AR')}</p>
-                                        <p className="md:col-span-2">
-                                            <span className="font-bold">Localidades:</span>{' '}
-                                            {(purchaseSummary.localidades?.length ? purchaseSummary.localidades : localidades).join(', ')}
-                                        </p>
-                                        {purchaseSummary.email && (
-                                            <p className="md:col-span-2"><span className="font-bold">Email:</span> {purchaseSummary.email}</p>
-                                        )}
-                                        {purchaseSummary.whatsapp && (
-                                            <p className="md:col-span-2"><span className="font-bold">WhatsApp:</span> {purchaseSummary.whatsapp}</p>
-                                        )}
-                                    </div>
-                                    <p className="mt-4 text-blue-700 font-semibold text-sm">
-                                        {getDeliveryChannelMessage(purchaseSummary)}
-                                    </p>
-                                </div>
-                            )}
+                            {/* Purchase summary removed - now shown in SuccessModal popup */}
                         </div>
                     )}
 
