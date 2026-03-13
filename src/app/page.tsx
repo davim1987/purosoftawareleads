@@ -871,7 +871,11 @@ function LeadsApp() {
                         const { status: currentStatus, rubro: sRubro, localidades: sLocs } = statusRes.data;
 
                         if (currentStatus && !currentStatus.startsWith?.('enriching_')) {
-                            setSearchStatus(currentStatus);
+                            // Don't overwrite with 'completed' during post-payment -
+                            // that's the initial search status, not the enrichment status
+                            if (!(currentStatus === 'completed' && isProcessing)) {
+                                setSearchStatus(currentStatus);
+                            }
                         }
 
                         if (statusRes.data.deliveryStatus) {
@@ -1034,6 +1038,9 @@ function LeadsApp() {
 
         // Initial search completed (pre-payment)
         if (status === 'completed' && !isProcessing) return 100;
+
+        // Search completed but in post-payment: waiting for enrichment to start
+        if (status === 'completed' && isProcessing) return 25;
 
         // Sending email phase -> 95%
         if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return 95;
