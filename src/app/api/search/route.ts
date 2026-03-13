@@ -28,6 +28,16 @@ interface LeadResponse {
     horario: string | null;
 }
 
+function normalizeText(value: string | null | undefined) {
+    return (value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // Simple in-memory fallback for rate limiting if DB fails
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
@@ -145,31 +155,52 @@ export async function POST(req: NextRequest) {
             console.error('DB query error:', dbErr);
         }
 
-        // Step B: If no results in DB, trigger Bot Fallback
-        if (leads.length === 0) {
+        // Step A.1: Check which requested localities are covered by DB results
+        const coveredNormLocs = new Set<string>();
+        for (const lead of leads) {
+            const loc = normalizeText(readString(lead, 'localidad', 'Localidad'));
+            if (loc) coveredNormLocs.add(loc);
+        }
+
+        const missingLocs: string[] = [];
+        const missingCoords: { lat: number; lon: number }[] = [];
+        for (const loc of localidades) {
+            const norm = normalizeText(loc);
+            const isCovered = Array.from(coveredNormLocs).some(dbLoc =>
+                dbLoc === norm || dbLoc.includes(norm) || norm.includes(dbLoc)
+            );
+            if (!isCovered && validCoordsMap[loc]) {
+                missingLocs.push(loc);
+                missingCoords.push(validCoordsMap[loc]);
+            }
+        }
+
+        // Step B: Launch bot for localities NOT in DB (or all if DB is empty)
+        const locsToSearch = leads.length === 0 ? Object.keys(validCoordsMap) : missingLocs;
+        const coordsToSearch = leads.length === 0 ? Object.values(validCoordsMap) : missingCoords;
+
+        if (locsToSearch.length > 0) {
             const botBaseUrl = process.env.NEXT_PUBLIC_BOT_API_URL || 'https://gmaps-simple-scraper.puro.software';
 
             try {
-                const validLocs = Object.keys(validCoordsMap);
-                const validCoords = Object.values(validCoordsMap);
-
                 // Create initial tracking record
                 await supabase.from('search_tracking').upsert({
                     id: searchId,
-                    status: `Geolocalizando ${validLocs.length} zonas...`,
+                    status: leads.length > 0
+                        ? `Buscando ${locsToSearch.length} zonas faltantes...`
+                        : `Geolocalizando ${locsToSearch.length} zonas...`,
                     rubro,
-                    localidad: validLocs.join(', '),
+                    localidad: localidades.join(', '), // All requested localities
                     provincia: provincia || 'Buenos Aires'
                 });
 
-                // 2. Launch Jobs
-                console.log(`[Parallel Search] Launching ${validLocs.length} bot jobs...`);
-                // Use httpsAgent only if defined
+                // Launch Jobs only for missing localities
+                console.log(`[Parallel Search] Launching ${locsToSearch.length} bot jobs (${leads.length > 0 ? 'hybrid: DB+bot' : 'full bot'})...`);
                 const agent = typeof httpsAgent !== 'undefined' ? httpsAgent : undefined;
                 
-                const jobRequests = validCoords.map((coords, idx) => {
+                const jobRequests = coordsToSearch.map((coords, idx) => {
                     const payload = {
-                        name: `P-${searchId.substring(0, 4)}-${validLocs[idx].substring(0, 5)}`,
+                        name: `P-${searchId.substring(0, 4)}-${locsToSearch[idx].substring(0, 5)}`,
                         keywords: [rubro],
                         lang: 'es',
                         zoom: 14,
@@ -194,7 +225,7 @@ export async function POST(req: NextRequest) {
                 const botJobIdString = actualJobIds.join(', ');
 
                 await supabase.from('search_tracking').update({
-                    status: `Procesando (0/${validLocs.length})...`,
+                    status: `Procesando (0/${locsToSearch.length})...`,
                     bot_job_id: botJobIdString
                 }).eq('id', searchId);
 
@@ -267,7 +298,36 @@ export async function POST(req: NextRequest) {
             coords: validCoordsMap // Ensured we always return actual coordinates
         });
 
-        const maskedLeads = mappedLeads.slice(0, 5).map((lead) => ({
+        // Diverse preview: round-robin 1 per locality, then fill by quality
+        const previewLimit = 5;
+        const previewLeads: LeadResponse[] = [];
+        const usedIds = new Set<string>();
+        const normRequestedLocs = localidades.map(l => normalizeText(l));
+
+        // Step 1: 1 lead per requested locality
+        for (const normLoc of normRequestedLocs) {
+            if (previewLeads.length >= previewLimit) break;
+            const match = mappedLeads.find(l => {
+                if (usedIds.has(l.id)) return false;
+                const leadLoc = normalizeText(l.localidad);
+                return leadLoc === normLoc || leadLoc.includes(normLoc) || normLoc.includes(leadLoc);
+            });
+            if (match) {
+                previewLeads.push(match);
+                usedIds.add(match.id);
+            }
+        }
+
+        // Step 2: Fill remaining with best quality
+        for (const lead of mappedLeads) {
+            if (previewLeads.length >= previewLimit) break;
+            if (!usedIds.has(lead.id)) {
+                previewLeads.push(lead);
+                usedIds.add(lead.id);
+            }
+        }
+
+        const maskedLeads = previewLeads.map((lead) => ({
             ...lead,
             email: maskEmail(lead.email || ''),
             whatsapp: maskPhone(lead.whatsapp || ''),

@@ -871,9 +871,10 @@ function LeadsApp() {
                         const { status: currentStatus, rubro: sRubro, localidades: sLocs } = statusRes.data;
 
                         if (currentStatus && !currentStatus.startsWith?.('enriching_')) {
-                            // Don't overwrite with 'completed' during post-payment -
-                            // that's the initial search status, not the enrichment status
-                            if (!(currentStatus === 'completed' && isProcessing)) {
+                            if (currentStatus === 'completed' && isProcessing) {
+                                // Search is done, waiting for enrichment to kick in
+                                setSearchStatus('waiting_enrichment');
+                            } else {
                                 setSearchStatus(currentStatus);
                             }
                         }
@@ -1059,6 +1060,7 @@ function LeadsApp() {
         // Post-payment states (gradual start)
         if (status === 'verifying_payment') return 8;
         if (status === 'processing_deep') return 15;
+        if (status === 'waiting_enrichment') return 25;
 
         // Initial search progress - Use displayProgress directly up to 95%
         if (displayProgress > 0) {
@@ -1074,6 +1076,7 @@ function LeadsApp() {
         if (deliveryStatus === 'failed') return '❌ ERROR: NO SE ENCONTRARON LEADS';
         if (deliveryStatus === 'sent') return '✅ ¡LEADS ENVIADOS A TU EMAIL!';
         if (status === 'verifying_payment') return '🔒 VERIFICANDO PAGO...';
+        if (status === 'waiting_enrichment') return '⌛ PREPARANDO ENRIQUECIMIENTO...';
         if (status === 'completed_deep' || status.toLowerCase().includes('enviados')) return '✉️ ENVIANDO EMAIL...';
         if (status === 'completed') return '✅ ¡BUSQUEDA FINALIZADA!';
         if (status === 'error') return '❌ ERROR EN EL PROCESO';
