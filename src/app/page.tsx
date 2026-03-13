@@ -728,21 +728,15 @@ function LeadsApp() {
                 setCurrentLocIndex(prev => (prev + 1) % (localidades.length || 1));
             }, 3000);
 
-            // Fake "slow" progress increment
+            // Slow fake progress: only crawls to 20% max, then real bot status takes over
             progressInterval = setInterval(() => {
                 setDisplayProgress(prev => {
-                    if (prev >= 98) return prev; // Stay below 100% until actually done
+                    if (prev >= 20) return prev; // Cap fake progress at 20% - real bot status takes over from here
 
-                    // Progressive slowdown: faster at start, very slow near end
-                    let increment = 0;
-                    if (prev < 30) increment = 2;
-                    else if (prev < 70) increment = 1;
-                    else if (prev < 90) increment = 0.5;
-                    else increment = 0.2;
-
-                    return Math.min(prev + increment, 98);
+                    const increment = prev < 10 ? 0.8 : 0.3;
+                    return Math.min(prev + increment, 20);
                 });
-            }, 500); // Smoother, more frequent updates
+            }, 600);
 
             const pollStatus = async () => {
                 if (!searchId) return;
@@ -771,6 +765,19 @@ function LeadsApp() {
                         if (!rubro && response.data.rubro) setRubro(response.data.rubro);
                         if ((!localidades || localidades.length === 0) && response.data.localidades) {
                             setLocalidades(response.data.localidades);
+                        }
+
+                        // Parse real bot progress from status like "Procesando (2/4)..."
+                        const botMatch = status.match(/\((\d+)\/(\d+)\)/);
+                        if (botMatch) {
+                            const done = parseInt(botMatch[1]);
+                            const total = parseInt(botMatch[2]);
+                            if (total > 0) {
+                                // Map bot progress 0-100% to display 20-90%
+                                const botPct = (done / total) * 100;
+                                const mapped = Math.floor(20 + (botPct * 0.70));
+                                setDisplayProgress(prev => Math.max(prev, mapped));
+                            }
                         }
                     }
 
