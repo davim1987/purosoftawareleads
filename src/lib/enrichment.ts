@@ -113,7 +113,14 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
 
     const rubro = orderData.rubro as string;
     const localidades = toArrayOfStrings(orderData.localidades);
-    const searchLimit = Math.max(Number(orderData.quantity_paid || 1) * 30, 500);
+    const quantityPaid = Math.max(1, Number(orderData.quantity_paid || 1));
+
+    // Only enrich a reasonable multiple of what the client paid for.
+    // quantity_paid * 3 gives margin for failures, min 10, max 30.
+    const enrichmentCap = Math.min(Math.max(quantityPaid * 3, 10), 30);
+    const searchLimit = enrichmentCap * 3; // Fetch more from DB to allow filtering
+
+    console.log(`[Enrichment] quantityPaid=${quantityPaid}, enrichmentCap=${enrichmentCap}, searchLimit=${searchLimit}`);
 
     // 0. Primary: lookup by search_id (most reliable for newly generated leads)
     let { data: leadsData, error } = await supabase
@@ -173,9 +180,13 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         );
     });
 
-    // Balanced filtering: Use strictly filtered leads if available,
-    // otherwise fallback to rubro-matched leads from the same overall search area.
-    const candidates = filtered.length > 0 ? filtered : leadsData;
+    // STRICT: Only use leads that match the requested localities.
+    // If no match, don't enrich leads from other localities.
+    if (filtered.length === 0 && normalizedLocalidades.length > 0) {
+        console.log(`[Enrichment] No leads match localities [${localidades.join(', ')}] for rubro="${rubro}" - returning empty`);
+        return [];
+    }
+    const candidates = filtered;
 
     const uniqueMap = new Map<string, Record<string, unknown>>();
     for (const lead of candidates) {
@@ -195,7 +206,7 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         if (!uniqueMap.has(key)) uniqueMap.set(key, rec);
     }
 
-    const uniqueLeads = Array.from(uniqueMap.values()).slice(0, ENRICHMENT_BATCH_SIZE);
+    const uniqueLeads = Array.from(uniqueMap.values()).slice(0, enrichmentCap);
 
     return uniqueLeads.map((lead) => ({
         id: readString(lead, 'id') || `${readString(lead, 'Nombre', 'nombre')}_${readString(lead, 'Localidad', 'localidad')}`,

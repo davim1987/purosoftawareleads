@@ -698,7 +698,8 @@ function LeadsApp() {
                         if (enrichData.status === 'processing' && enrichData.total > 0) {
                             const pct = Math.floor((enrichData.processed / enrichData.total) * 100);
                             setSearchStatus(`enriching_${pct}`);
-                            setDisplayProgress(pct);
+                            // Don't set displayProgress directly - calculateProgress() maps
+                            // enriching_XX to 60-90% range and visualProgress smooths the animation
                             if (enrichData.currentBusinessName) {
                                 setCurrentBusinessName(enrichData.currentBusinessName);
                             }
