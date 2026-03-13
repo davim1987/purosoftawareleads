@@ -1572,7 +1572,7 @@ function LeadsApp() {
                                     rubro={purchaseSummary.rubro || rubro}
                                     localidades={purchaseSummary.localidades?.length ? purchaseSummary.localidades : localidades}
                                     onNewSearch={handleResetSearch}
-                                    onClose={() => setShowSuccessModal(false)}
+                                    onClose={() => { setShowSuccessModal(false); setSuccessModalReady(false); }}
                                 />
                             )}
 
