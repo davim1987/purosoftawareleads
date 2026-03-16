@@ -1145,6 +1145,7 @@ function LeadsApp() {
     const handleLocalidadesSave = (selectedLocalidades: string[]) => {
         setLocalidades(selectedLocalidades);
         setIsLocalidadModalOpen(false);
+        if (error) setError(null);
     };
 
     const handleSearch = async (fromPolling = false) => {
@@ -1278,7 +1279,7 @@ function LeadsApp() {
                                 type="text"
                                 id="rubro"
                                 value={rubro}
-                                onChange={(e) => setRubro(e.target.value)}
+                                onChange={(e) => { setRubro(e.target.value); if (error) setError(null); }}
                                 placeholder="Ej: hamburguesería, abogados, panadería..."
                                 className="w-full rounded-2xl border-2 border-blue-200 dark:border-gray-700 bg-blue-50/50 dark:bg-[#0B0F19] px-5 py-4 text-center text-xl font-black text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 outline-none transition focus:border-blue-500 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
                             />
