@@ -115,9 +115,9 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
     const localidades = toArrayOfStrings(orderData.localidades);
     const quantityPaid = Math.max(1, Number(orderData.quantity_paid || 1));
 
-    // Enrich a reasonable multiple of what the client paid for.
-    // quantity_paid * 3 gives margin for failures, min 10, max 100.
-    const enrichmentCap = Math.min(Math.max(quantityPaid * 3, 10), 100);
+    // Enrich only what the client paid for + 50% margin for failures.
+    // No artificial max cap - scales with order size.
+    const enrichmentCap = Math.max(Math.ceil(quantityPaid * 1.5), 5);
     const searchLimit = enrichmentCap * 3; // Fetch more from DB to allow filtering
 
     console.log(`[Enrichment] quantityPaid=${quantityPaid}, enrichmentCap=${enrichmentCap}, searchLimit=${searchLimit}`);
