@@ -673,6 +673,11 @@ function LeadsApp() {
                 }
             }
 
+            // Clean up MercadoPago junk params from URL immediately
+            if (searchParams.get('collection_id') || searchParams.get('merchant_order_id')) {
+                router.replace(`/?searchId=${urlSearchId}&payment=${paymentStatus || 'pending'}`);
+            }
+
             if (paymentStatus === 'success') {
                 setIsProcessing(true);
                 setSearchStatus('processing_deep');
