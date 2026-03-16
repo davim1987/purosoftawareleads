@@ -398,7 +398,9 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
 
     // Fallbacks if search_id yields nothing (for legacy leads or direct DB hits)
     if (!leadsError && leadsData.length === 0) {
-        // 1) Primary Fallback: Accent-insensitive RPC search
+        console.log(`[Delivery] No leads by search_id=${searchId}, trying fallbacks for rubro="${order.rubro}" localidades=[${localidades.join(', ')}]`);
+
+        // 1) Primary Fallback: Accent-insensitive RPC search (filters by rubro + localidades)
         const { data: rpcLeads, error: rpcError } = await supabase
             .rpc('search_leads_unaccented', {
                 query_text: order.rubro,
@@ -408,29 +410,32 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
 
         if (!rpcError && rpcLeads && rpcLeads.length > 0) {
             leadsData = rpcLeads as LeadRow[];
-        } else {
-            // 2) Traditional Fallback: rubro (lowercase column)
+            console.log(`[Delivery] RPC fallback found ${leadsData.length} leads`);
+        } else if (localidades.length > 0) {
+            // 2) Traditional Fallback: rubro + localidad filter (ALWAYS filter by locality)
             const result = await supabase
                 .from('leads_free_search')
                 .select('*')
                 .textSearch('rubro', order.rubro, { config: 'spanish', type: 'websearch' })
+                .in('localidad', localidades)
                 .limit(searchLimit);
             leadsData = (result.data || []) as LeadRow[];
             leadsError = result.error;
 
-            // 3) Fallback: ilike (handles accents)
+            // 3) Fallback: ilike rubro + localidad filter
             if (!leadsError && leadsData.length === 0) {
                 const result3 = await supabase
                     .from('leads_free_search')
                     .select('*')
                     .ilike('rubro', `%${order.rubro}%`)
+                    .in('localidad', localidades)
                     .limit(searchLimit);
                 leadsData = (result3.data || []) as LeadRow[];
                 leadsError = result3.error;
             }
-        }
 
-        // Last resort removed: never fetch leads without rubro/locality filters
+            console.log(`[Delivery] Traditional fallback found ${leadsData.length} leads`);
+        }
     }
 
     if (leadsError || !leadsData || leadsData.length === 0) {

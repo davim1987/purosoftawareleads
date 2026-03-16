@@ -130,9 +130,9 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         .limit(searchLimit);
 
     if (error || !leadsData || leadsData.length === 0) {
-        console.log(`[Enrichment] No leads found by search_id=${searchId}, falling back to robust search for rubro="${rubro}"`);
+        console.log(`[Enrichment] No leads found by search_id=${searchId}, trying fallbacks for rubro="${rubro}" localidades=[${localidades.join(', ')}]`);
         
-        // 1. Fallback: Accent-insensitive RPC search
+        // 1. Fallback: Accent-insensitive RPC search (filters by rubro + localidades)
         const { data: rpcLeads, error: rpcError } = await supabase
             .rpc('search_leads_unaccented', {
                 query_text: rubro,
@@ -142,26 +142,31 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
 
         if (!rpcError && rpcLeads && rpcLeads.length > 0) {
             leadsData = rpcLeads;
-        } else {
-            // 2. Fallback: text search in rubro (lowercase column)
+            console.log(`[Enrichment] RPC fallback found ${rpcLeads.length} leads`);
+        } else if (localidades.length > 0) {
+            // 2. Fallback: text search in rubro + locality filter (ALWAYS filter by locality)
             const result = await supabase
                 .from('leads_free_search')
                 .select('*')
                 .textSearch('rubro', rubro, { config: 'spanish', type: 'websearch' })
+                .in('localidad', localidades)
                 .limit(searchLimit);
             leadsData = result.data;
             error = result.error;
 
-            // 3. Fallback: ilike search (broader)
+            // 3. Fallback: ilike rubro + locality filter
             if (!error && (!leadsData || leadsData.length === 0)) {
                 const result3 = await supabase
                     .from('leads_free_search')
                     .select('*')
                     .ilike('rubro', `%${rubro}%`)
+                    .in('localidad', localidades)
                     .limit(searchLimit);
                 leadsData = result3.data;
                 error = result3.error;
             }
+
+            console.log(`[Enrichment] Traditional fallback found ${leadsData?.length || 0} leads`);
         }
     }
 
