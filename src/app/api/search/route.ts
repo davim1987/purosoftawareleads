@@ -11,6 +11,7 @@ interface SearchRequestBody {
     rubro?: string;
     provincia?: string;
     localidades?: string[];
+    localidadProvinciaMap?: Record<string, string>;
 }
 
 interface LeadResponse {
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
     try {
         const ip = req.headers.get('x-forwarded-for') || 'unknown-ip';
         const body = (await req.json()) as SearchRequestBody;
-        const { rubro, provincia, localidades } = body;
+        const { rubro, provincia, localidades, localidadProvinciaMap } = body;
 
         if (!rubro || !localidades || !Array.isArray(localidades) || localidades.length === 0) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -98,10 +99,14 @@ export async function POST(req: NextRequest) {
         const isFullRequest = req.nextUrl.searchParams.get('full') === 'true';
 
         // Step 0: Always Geolocate to ensure correct coordinates for checkout/delivery
+        // Use per-locality province from the selector when available (prevents wrong city matches)
         let validCoordsMap: Record<string, { lat: number; lon: number }> = {};
         try {
             console.log(`[Search API] Geolocating ${localidades.length} localities for search ${searchId}...`);
-            const coordsResults = await Promise.all(localidades.map((loc) => getGeolocation(loc, provincia || '')));
+            const coordsResults = await Promise.all(localidades.map((loc) => {
+                const locProvincia = localidadProvinciaMap?.[loc] || provincia || '';
+                return getGeolocation(loc, locProvincia);
+            }));
             const validLocs = localidades.filter((_, idx) => coordsResults[idx] !== null);
             const validCoords = coordsResults.filter((c): c is { lat: number; lon: number } => c !== null);
 

@@ -1192,10 +1192,21 @@ function LeadsApp() {
         setError(null);
 
         try {
+            // Build localidad → provincia map so geolocation uses the correct province
+            const localidadProvinciaMap: Record<string, string> = {};
+            for (const [provName, locs] of Object.entries(dynamicLocalidades)) {
+                for (const loc of locs) {
+                    if (localidades.includes(loc)) {
+                        localidadProvinciaMap[loc] = provName;
+                    }
+                }
+            }
+
             const response = await axios.post('/api/search', {
                 rubro,
                 provincia,
-                localidades
+                localidades,
+                localidadProvinciaMap
             });
 
             // Extract the searchId from the response (always present now)
