@@ -173,8 +173,7 @@ function toCsv(rows: EnrichedLeadRow[]) {
         return values.map(escapeCell).join(';');
     });
 
-    // Added 'sep=;' so Excel detects the separator automatically in any region
-    const csvContent = `sep=;\n${headers.join(';')}\n${body.join('\n')}`;
+    const csvContent = `${headers.join(';')}\n${body.join('\n')}`;
     return `\ufeff${csvContent}`;
 }
 
