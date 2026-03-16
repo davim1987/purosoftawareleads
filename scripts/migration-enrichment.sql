@@ -68,3 +68,6 @@ WHERE download_token IS NOT NULL;
 -- Add current_business_name to show real-time progress in UI
 ALTER TABLE public.enrichment_jobs ADD COLUMN IF NOT EXISTS current_business_name TEXT;
 
+-- Add telefono column to leads_free_search (separate from whatsapp)
+ALTER TABLE public.leads_free_search ADD COLUMN IF NOT EXISTS telefono TEXT;
+

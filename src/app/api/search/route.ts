@@ -21,6 +21,7 @@ interface LeadResponse {
     localidad: string;
     provincia: string;
     email: string | null;
+    telefono: string | null;
     whatsapp: string | null;
     web: string | null;
     instagram: string | null;
@@ -278,6 +279,7 @@ export async function POST(req: NextRequest) {
                 localidad: readString(lead, 'localidad', 'Localidad') || '',
                 provincia: readString(lead, 'provincia', 'Provincia') || (provincia || ''),
                 email: readString(lead, 'email', 'Email'),
+                telefono: readString(lead, 'telefono'),
                 whatsapp: readString(lead, 'whatsapp'),
                 web: readString(lead, 'web', 'Web'),
                 instagram: readString(lead, 'instagram'),
@@ -330,6 +332,7 @@ export async function POST(req: NextRequest) {
         const maskedLeads = previewLeads.map((lead) => ({
             ...lead,
             email: maskEmail(lead.email || ''),
+            telefono: maskPhone(lead.telefono || ''),
             whatsapp: maskPhone(lead.whatsapp || ''),
             instagram: maskSocial(lead.instagram || ''),
             facebook: maskSocial(lead.facebook || '')

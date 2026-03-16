@@ -29,7 +29,8 @@ interface LeadRow {
     localidad?: string;
     Provincia?: string;
     provincia?: string;
-    Whatssap?: string;
+    telefono?: string;
+    Telefono?: string;
     whatsapp?: string;
     Email?: string;
     email?: string;

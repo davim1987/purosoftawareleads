@@ -326,8 +326,7 @@ def _store_contact(
             elif contact_type == "whatsapp":
                 update_data["whatsapp"] = normalized_value
             elif contact_type == "phone":
-                # Only update if Whatssap is empty or if we want to store it in a phone column
-                update_data["whatsapp"] = normalized_value
+                update_data["telefono"] = normalized_value
 
             if update_data:
                 supabase.table("leads_free_search").update(update_data).eq("id", business_id).execute()

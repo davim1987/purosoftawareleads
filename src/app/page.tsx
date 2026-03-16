@@ -16,6 +16,7 @@ interface Lead {
     rubro: string;
     direccion: string | null;
     email: string | null;
+    telefono: string | null;
     whatsapp: string | null;
     web: string | null;
     localidad: string;

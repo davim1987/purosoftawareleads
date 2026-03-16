@@ -115,9 +115,9 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
     const localidades = toArrayOfStrings(orderData.localidades);
     const quantityPaid = Math.max(1, Number(orderData.quantity_paid || 1));
 
-    // Only enrich a reasonable multiple of what the client paid for.
-    // quantity_paid * 3 gives margin for failures, min 10, max 30.
-    const enrichmentCap = Math.min(Math.max(quantityPaid * 3, 10), 30);
+    // Enrich a reasonable multiple of what the client paid for.
+    // quantity_paid * 3 gives margin for failures, min 10, max 100.
+    const enrichmentCap = Math.min(Math.max(quantityPaid * 3, 10), 100);
     const searchLimit = enrichmentCap * 3; // Fetch more from DB to allow filtering
 
     console.log(`[Enrichment] quantityPaid=${quantityPaid}, enrichmentCap=${enrichmentCap}, searchLimit=${searchLimit}`);
@@ -214,15 +214,15 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         byLocality.get(loc)!.push(lead);
     }
 
-    // Sort each locality pool by data quality (most complete first)
+    // Sort each locality pool by data quality (LEAST complete first = most value from enrichment)
     for (const [, pool] of byLocality) {
         pool.sort((a, b) => {
             const score = (rec: Record<string, unknown>) =>
                 (isAvailable(readString(rec, 'email', 'Email')) ? 2 : 0) +
-                (isAvailable(readString(rec, 'whatsapp', 'telefono')) ? 2 : 0) +
+                (isAvailable(readString(rec, 'telefono', 'whatsapp')) ? 2 : 0) +
                 (isAvailable(readString(rec, 'web', 'Web')) ? 1 : 0) +
                 (isAvailable(readString(rec, 'instagram')) ? 1 : 0);
-            return score(b) - score(a);
+            return score(a) - score(b);
         });
     }
 
@@ -254,7 +254,7 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         provincia: readString(lead, 'Provincia', 'provincia') || null,
         rubro: rubro || null,
         existing_website: readString(lead, 'web', 'Web') || null,
-        existing_phone: readString(lead, 'whatsapp') || null,
+        existing_phone: readString(lead, 'telefono', 'whatsapp') || null,
         existing_email: readString(lead, 'email', 'Email') || null,
     }));
 }

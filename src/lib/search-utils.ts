@@ -32,6 +32,7 @@ type CsvRow = Record<string, CsvValue>;
 interface SearchLead {
     id: string;
     nombre: string;
+    telefono: string | null;
     whatsapp: string | null;
     web: string | null;
     email: string | null;
@@ -302,8 +303,9 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                         const pid = l.place_id || l.placeId || l.cid || l.id;
                         const isInternal = !pid || String(pid).startsWith('lead-');
 
-                        const mail = findValue(l, 'extended_emails', 'email', 'emails', 'email address', 'e-mail');
-                        const phone = findValue(l, 'phone', 'whatsapp', 'phone number', 'phone_number', 'telefono', 'tel');
+                    const mail = findValue(l, 'extended_emails', 'email', 'emails', 'email address', 'e-mail');
+                        const phone = findValue(l, 'phone', 'phone number', 'phone_number', 'telefono', 'tel');
+                        const waNumber = findValue(l, 'whatsapp', 'whatsApp', 'wa_number');
                         const website = findValue(l, 'website', 'web', 'website url', 'url', 'site');
                         const instagram = findValue(l, 'instagram', 'instagram handle', 'ig');
                         const facebook = findValue(l, 'facebook', 'facebook page', 'fb');
@@ -332,7 +334,8 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                         const leadObj: SearchLead = {
                             id: isInternal ? tempId : String(pid),
                             nombre: findValue(l, 'title', 'name', 'business name', 'nombre') || 'Nombre Reservado',
-                            whatsapp: phone,
+                            telefono: phone,
+                            whatsapp: waNumber || null,
                             web: website,
                             email: mail || 'No disponible',
                             direccion: findValue(l, 'address', 'complete_address', 'full address', 'formatted_address', 'direccion') || 'No disponible',
@@ -352,7 +355,8 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                             direccion: leadObj.direccion,
                             localidad: leadObj.localidad,
                             provincia: currentProvince,
-                            search_id: searchId, // Added this
+                            search_id: searchId,
+                            telefono: leadObj.telefono,
                             whatsapp: leadObj.whatsapp,
                             email: leadObj.email === 'No disponible' ? null : leadObj.email,
                             web: leadObj.web,
@@ -369,7 +373,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                             const pIds = jobLeadsToInsert.map(l => l.place_id).filter(Boolean) as string[];
                             const { data: existing } = await supabase
                                 .from('leads_free_search')
-                                .select('id, place_id, email, whatsapp, web, instagram, facebook')
+                                .select('id, place_id, email, telefono, whatsapp, web, instagram, facebook')
                                 .in('place_id', pIds);
 
                             const existingMap = new Map(existing?.map(l => [l.place_id, l]));
@@ -389,6 +393,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                                     // but if we want to be safe, we keep it ONLY for existing ones
                                     id: exist.id, 
                                     email: isAv(newLead.email) ? newLead.email : (exist.email || newLead.email),
+                                    telefono: isAv(newLead.telefono) ? newLead.telefono : (exist.telefono || newLead.telefono),
                                     whatsapp: isAv(newLead.whatsapp) ? newLead.whatsapp : (exist.whatsapp || newLead.whatsapp),
                                     web: isAv(newLead.web) ? newLead.web : (exist.web || newLead.web),
                                     instagram: isAv(newLead.instagram) ? newLead.instagram : (exist.instagram || newLead.instagram),

@@ -7,6 +7,7 @@ interface Lead {
     rubro: string;
     direccion: string | null;
     email: string | null;
+    telefono: string | null;
     whatsapp: string | null;
     web: string | null;
     localidad: string;
@@ -30,6 +31,7 @@ export default function LeadTable({ leads, remaining }: { leads: Lead[], remaini
 
     const getContactNumber = (lead: Lead) => {
         if (lead.whatsapp && lead.whatsapp !== 'null') return lead.whatsapp;
+        if (lead.telefono && lead.telefono !== 'null') return lead.telefono;
         if (lead.telefono2 && lead.telefono2 !== 'null') return lead.telefono2;
         return null;
     };

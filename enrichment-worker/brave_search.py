@@ -27,8 +27,8 @@ SOCIAL_DOMAINS = {
     "instagram.com": "instagram",
     "facebook.com": "facebook",
     "linkedin.com": "linkedin",
-    "twitter.com": "twitter",
-    "x.com": "twitter",
+    "twitter.com": "other",
+    "x.com": "other",
 }
 
 
