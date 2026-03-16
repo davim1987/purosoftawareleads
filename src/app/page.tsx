@@ -561,7 +561,7 @@ function SuccessModal({
 
 function LeadsApp() {
     const [rubro, setRubro] = useState('');
-    const [provincia, setProvincia] = useState('Argentina');
+    const [provincia, setProvincia] = useState('');
     const [localidades, setLocalidades] = useState<string[]>([]);
     const [dynamicLocalidades, setDynamicLocalidades] = useState<Record<string, string[]>>({});
     const [isLoadingGeo, setIsLoadingGeo] = useState({ localities: false });
@@ -653,7 +653,6 @@ function LeadsApp() {
             if (!urlSearchId || urlSearchId === id) {
                 if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
                     setRubro(sRubro);
-                    setProvincia('Argentina');
                     setLocalidades(sLocs);
                     if (!urlSearchId) setSearchId(id);
                 }
@@ -1122,7 +1121,7 @@ function LeadsApp() {
         setDetectedPaymentId(null);
         setDeliveryStatus('pending');
         setDownloadToken(null);
-        setProvincia('Argentina');
+        setProvincia('');
         setRubro('');
         setLocalidades([]);
 
@@ -1155,7 +1154,7 @@ function LeadsApp() {
     };
 
     const handleSearch = async (fromPolling = false) => {
-        if (!rubro || !provincia || localidades.length === 0) {
+        if (!rubro || localidades.length === 0) {
             setError('Por favor complete todos los campos.');
             return;
         }
