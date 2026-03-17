@@ -108,6 +108,11 @@ def _extract_from_html(html: str) -> dict:
     for wa_match in WHATSAPP_LINK_REGEX.finditer(html):
         result["whatsapps"].add(wa_match.group(1))
 
+    # Extract WhatsApp from JS widgets (JoinChat, Elfsight, etc.)
+    # Matches patterns like "telephone":"5492235552612" or 'phone':'5491112345678'
+    for js_wa in re.finditer(r'["\'](?:telephone|phone|whatsapp)["\']:\s*["\'](\+?\d{10,15})["\']', html):
+        result["whatsapps"].add(js_wa.group(1))
+
     # Search raw HTML for phones/emails in JS templates, inline data, or SPAs
     for e in EMAIL_REGEX.findall(html):
         if not _is_junk_email(e):
