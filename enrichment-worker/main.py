@@ -93,6 +93,47 @@ async def health():
     }
 
 
+class TestScrapeRequest(BaseModel):
+    url: str
+
+
+@app.post("/test-scrape")
+async def test_scrape(request: TestScrapeRequest, authorization: str = Header(...)):
+    """Test endpoint: scrape a URL and return all extracted data (no DB writes)."""
+    verify_auth(authorization)
+    try:
+        contacts = await scrape_url(request.url)
+        # Also normalize the phones/whatsapps to show final format
+        normalized_phones = []
+        for p in contacts.get("phones", []):
+            norm, valid = normalize_phone(p)
+            normalized_phones.append({"raw": p, "normalized": norm, "valid": valid})
+        normalized_whatsapps = []
+        for w in contacts.get("whatsapps", []):
+            norm, valid = normalize_whatsapp(w)
+            normalized_whatsapps.append({"raw": w, "normalized": norm, "valid": valid})
+        normalized_emails = []
+        for e in contacts.get("emails", []):
+            norm, valid = normalize_email(e)
+            normalized_emails.append({"raw": e, "normalized": norm, "valid": valid})
+        return {
+            "url": request.url,
+            "raw": {
+                "emails": list(contacts.get("emails", [])),
+                "phones": list(contacts.get("phones", [])),
+                "whatsapps": list(contacts.get("whatsapps", [])),
+                "social": contacts.get("social", []),
+            },
+            "normalized": {
+                "emails": normalized_emails,
+                "phones": normalized_phones,
+                "whatsapps": normalized_whatsapps,
+            },
+        }
+    except Exception as e:
+        return {"error": str(e), "url": request.url}
+
+
 @app.post("/enrich", status_code=202)
 async def enrich(
     request: EnrichRequest,
