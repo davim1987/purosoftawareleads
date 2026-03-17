@@ -14,10 +14,16 @@ def normalize_phone(raw: str, default_region: str = "AR") -> tuple[str, bool]:
     # - Remove leading 0 from area codes: 011 → 11, 0351 → 351
     # - Only if it doesn't already have a country code
     if not cleaned.startswith("+"):
-        cleaned = cleaned.lstrip("0")
-        # If it's just digits without country code, prepend +54
-        if cleaned.isdigit() and len(cleaned) >= 8:
-            cleaned = "+54" + cleaned
+        # If it already starts with 54 and has 12-13 digits, it's a full AR number
+        if cleaned.startswith("549") and len(cleaned) >= 12:
+            cleaned = "+" + cleaned
+        elif cleaned.startswith("54") and len(cleaned) >= 11:
+            cleaned = "+" + cleaned
+        else:
+            cleaned = cleaned.lstrip("0")
+            # If it's just digits without country code, prepend +54
+            if cleaned.isdigit() and len(cleaned) >= 8:
+                cleaned = "+54" + cleaned
 
     try:
         parsed = phonenumbers.parse(cleaned, default_region)

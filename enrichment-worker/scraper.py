@@ -35,9 +35,17 @@ CONTACT_PATHS = [
 USER_AGENT = "PurosoftwareBot/1.0 (+https://purosoftware.com)"
 
 
+JUNK_EMAIL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".css", ".js"}
+
+
 def _is_junk_email(email: str) -> bool:
     domain = email.split("@")[-1].lower()
-    return domain in JUNK_EMAIL_DOMAINS
+    if domain in JUNK_EMAIL_DOMAINS:
+        return True
+    # Filter out image/asset filenames that look like emails (e.g. logo@2x.png)
+    if any(email.lower().endswith(ext) for ext in JUNK_EMAIL_EXTENSIONS):
+        return True
+    return False
 
 
 def _decode_cf_email(encoded: str) -> str:
@@ -113,13 +121,20 @@ def _extract_from_html(html: str) -> dict:
     for js_wa in re.finditer(r'["\'](?:telephone|phone|whatsapp)["\']:\s*["\'](\+?\d{10,15})["\']', html):
         result["whatsapps"].add(js_wa.group(1))
 
-    # Search raw HTML for phones/emails in JS templates, inline data, or SPAs
+    # Search raw HTML for emails in JS templates, inline data, or SPAs
     for e in EMAIL_REGEX.findall(html):
         if not _is_junk_email(e):
             result["emails"].add(e)
-    for p in PHONE_REGEX_AR.findall(html):
-        clean = re.sub(r"[^\d+]", "", p)
-        if len(clean) >= 8:
+
+    # Search raw HTML for phones - only trust numbers near phone-related keywords
+    # to avoid false positives from CSS values, timestamps, IDs, etc.
+    phone_context_regex = re.compile(
+        r'(?:tel[eéf]fono|phone|celular|móvil|movil|whatsapp|llamar|tel:|"tel")\s*[:=]?\s*["\']?\s*(\+?[\d\s\-().]{8,20})',
+        re.IGNORECASE,
+    )
+    for m in phone_context_regex.finditer(html):
+        clean = re.sub(r"[^\d+]", "", m.group(1))
+        if 8 <= len(clean) <= 15:
             result["phones"].add(clean)
 
     # Extract social media links (Instagram, Facebook, LinkedIn)
