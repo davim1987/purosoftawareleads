@@ -13,9 +13,9 @@ PHONE_REGEX_AR = re.compile(
     r"(?:\+?54\s?9?\s?)?(?:\(?\d{2,4}\)?\s?[\-.]?\s?)?\d{4}\s?[\-.]?\s?\d{4}"
 )
 
-# WhatsApp link patterns
+# WhatsApp link patterns (wa.me, api.whatsapp, whatsapp://, web.whatsapp)
 WHATSAPP_LINK_REGEX = re.compile(
-    r"(?:wa\.me/|api\.whatsapp\.com/send\?phone=)\+?(\d{10,15})"
+    r"(?:wa\.me/|api\.whatsapp\.com/send\?phone=|whatsapp://send\?phone=|web\.whatsapp\.com/send\?phone=)\+?(\d{10,15})"
 )
 
 # Common junk emails to filter
@@ -40,6 +40,18 @@ def _is_junk_email(email: str) -> bool:
     return domain in JUNK_EMAIL_DOMAINS
 
 
+def _decode_cf_email(encoded: str) -> str:
+    """Decode Cloudflare's email obfuscation (XOR cipher)."""
+    try:
+        r = int(encoded[:2], 16)
+        return "".join(
+            chr(int(encoded[i : i + 2], 16) ^ r)
+            for i in range(2, len(encoded), 2)
+        )
+    except Exception:
+        return ""
+
+
 def _extract_from_html(html: str) -> dict:
     """Extract contacts from a single HTML page."""
     result = {"emails": set(), "phones": set(), "whatsapps": set()}
@@ -60,6 +72,12 @@ def _extract_from_html(html: str) -> dict:
         href = a_tag["href"].replace("mailto:", "").split("?")[0].strip()
         if "@" in href and not _is_junk_email(href):
             result["emails"].add(href)
+
+    # Decode Cloudflare-protected emails (data-cfemail XOR cipher)
+    for cf_tag in soup.find_all(attrs={"data-cfemail": True}):
+        decoded = _decode_cf_email(cf_tag["data-cfemail"])
+        if "@" in decoded and not _is_junk_email(decoded):
+            result["emails"].add(decoded)
 
     # Extract phones from tel: links (most reliable)
     for a_tag in soup.find_all("a", href=re.compile(r"^tel:", re.I)):
@@ -82,6 +100,15 @@ def _extract_from_html(html: str) -> dict:
     # Also search raw HTML for wa.me links
     for wa_match in WHATSAPP_LINK_REGEX.finditer(html):
         result["whatsapps"].add(wa_match.group(1))
+
+    # Search raw HTML for phones/emails in JS templates, inline data, or SPAs
+    for e in EMAIL_REGEX.findall(html):
+        if not _is_junk_email(e):
+            result["emails"].add(e)
+    for p in PHONE_REGEX_AR.findall(html):
+        clean = re.sub(r"[^\d+]", "", p)
+        if len(clean) >= 8:
+            result["phones"].add(clean)
 
     # Discover contact-related links on this page
     contact_links = set()
