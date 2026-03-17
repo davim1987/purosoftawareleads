@@ -475,12 +475,22 @@ export async function deliverOrderBySearchId(searchId: string, options: DeliverO
     }
 
     const uniqueMap = new Map<string, LeadRow>();
+    const seenNames = new Set<string>();
     for (const lead of candidateLeads) {
-        // Use consistent separator '_' for fallback lead IDs
-        // Use consistent separator '_' for fallback lead IDs
-        const key = readString(lead, 'id') || `${readString(lead, 'nombre', 'Nombre')}_${readString(lead, 'localidad', 'Localidad')}`;
-        if (!uniqueMap.has(key)) uniqueMap.set(key, lead);
+        const leadId = readString(lead, 'id');
+        const leadName = normalizeText(readString(lead, 'nombre', 'Nombre'));
+        const leadLoc = normalizeText(readString(lead, 'localidad', 'Localidad'));
+        
+        // Primary dedup key: database ID
+        const idKey = leadId || `${leadName}_${leadLoc}`;
+        // Secondary dedup key: name + locality (catches same business with different IDs)
+        const nameKey = `${leadName}__${leadLoc}`;
+
+        if (uniqueMap.has(idKey) || seenNames.has(nameKey)) continue;
+        uniqueMap.set(idKey, lead);
+        if (leadName) seenNames.add(nameKey);
     }
+    console.log(`[Delivery] Dedup: ${candidateLeads.length} candidates → ${uniqueMap.size} unique leads`);
 
     // Sort unique leads only by score initially (to preserve global ranking for fallbacks)
     const allUniqueLeads = Array.from(uniqueMap.values()).sort((a, b) => {

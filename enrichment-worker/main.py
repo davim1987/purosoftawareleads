@@ -253,6 +253,11 @@ async def enrich_single_business(search_id: str, business: Business):
                     raw_wa, normalized, is_valid, confidence, url,
                 )
 
+            # Store social media links found in the page HTML
+            for social in contacts.get("social", []):
+                _store_source(search_id, business.id, social["type"], social["url"])
+                print(f"[Worker] Found {social['type']} from HTML scrape: {social['url']}")
+
         except Exception as e:
             print(f"[Worker] Error scraping {url}: {e}")
 

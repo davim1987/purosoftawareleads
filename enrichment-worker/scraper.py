@@ -52,9 +52,16 @@ def _decode_cf_email(encoded: str) -> str:
         return ""
 
 
+SOCIAL_LINK_DOMAINS = {
+    "instagram.com": "instagram",
+    "facebook.com": "facebook",
+    "linkedin.com": "linkedin",
+}
+
+
 def _extract_from_html(html: str) -> dict:
-    """Extract contacts from a single HTML page."""
-    result = {"emails": set(), "phones": set(), "whatsapps": set()}
+    """Extract contacts and social media links from a single HTML page."""
+    result = {"emails": set(), "phones": set(), "whatsapps": set(), "social": []}
 
     try:
         soup = BeautifulSoup(html, "lxml")
@@ -110,18 +117,33 @@ def _extract_from_html(html: str) -> dict:
         if len(clean) >= 8:
             result["phones"].add(clean)
 
+    # Extract social media links (Instagram, Facebook, LinkedIn)
+    seen_social_domains = set()
+    for a_tag in soup.find_all("a", href=True):
+        href = str(a_tag["href"]).strip()
+        href_lower = href.lower()
+        for social_domain, social_type in SOCIAL_LINK_DOMAINS.items():
+            if social_domain in href_lower and social_domain not in seen_social_domains:
+                # Skip share/sharer/intent links (these are share buttons, not profile links)
+                if "/sharer" in href_lower or "/share" in href_lower or "intent" in href_lower:
+                    continue
+                seen_social_domains.add(social_domain)
+                result["social"].append({"type": social_type, "url": href})
+                break
+
     # Discover contact-related links on this page
     contact_links = set()
     for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"].lower()
+        href = str(a_tag["href"]).lower()
         link_text = (a_tag.get_text() or "").lower().strip()
         if any(kw in href or kw in link_text for kw in ["contact", "contacto", "contactanos", "contactenos"]):
-            contact_links.add(a_tag["href"])
+            contact_links.add(str(a_tag["href"]))
 
     return {
         "emails": result["emails"],
         "phones": result["phones"],
         "whatsapps": result["whatsapps"],
+        "social": result["social"],
         "contact_links": contact_links,
     }
 
@@ -129,12 +151,20 @@ def _extract_from_html(html: str) -> dict:
 async def scrape_url(url: str) -> dict:
     """
     Scrape a URL and its contact sub-pages for contact information.
-    Returns: { emails: [str], phones: [str], whatsapps: [str] }
+    Returns: { emails: [str], phones: [str], whatsapps: [str], social: [{ type, url }] }
     """
     all_emails = set()
     all_phones = set()
     all_whatsapps = set()
+    all_social: list[dict] = []
+    seen_social_types = set()
     scraped_urls = set()
+
+    def _merge_social(social_list: list[dict]):
+        for s in social_list:
+            if s["type"] not in seen_social_types:
+                seen_social_types.add(s["type"])
+                all_social.append(s)
 
     try:
         async with httpx.AsyncClient(
@@ -151,6 +181,7 @@ async def scrape_url(url: str) -> dict:
                 all_emails.update(extracted["emails"])
                 all_phones.update(extracted["phones"])
                 all_whatsapps.update(extracted["whatsapps"])
+                _merge_social(extracted.get("social", []))
 
                 # 2. Try known contact sub-pages
                 base_url = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
@@ -181,6 +212,7 @@ async def scrape_url(url: str) -> dict:
                         all_emails.update(sub_extracted["emails"])
                         all_phones.update(sub_extracted["phones"])
                         all_whatsapps.update(sub_extracted["whatsapps"])
+                        _merge_social(sub_extracted.get("social", []))
                         sub_count += 1
 
     except Exception as e:
@@ -190,6 +222,7 @@ async def scrape_url(url: str) -> dict:
         "emails": list(all_emails)[:5],
         "phones": list(all_phones)[:5],
         "whatsapps": list(all_whatsapps)[:3],
+        "social": all_social,
     }
 
 
