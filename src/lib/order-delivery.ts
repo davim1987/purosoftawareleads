@@ -134,9 +134,9 @@ function toCsv(rows: EnrichedLeadRow[]) {
     ];
 
     const escapeCell = (value: string) => {
-        // Clean up common "empty" indicators from the DB to make the CSV look better
         const cleanValue = (value || '').trim();
         if (
+            !cleanValue ||
             cleanValue.toLowerCase() === 'no disponible' ||
             cleanValue.toLowerCase() === 'n/a' ||
             cleanValue === '-'
@@ -145,6 +145,8 @@ function toCsv(rows: EnrichedLeadRow[]) {
         }
         return `"${cleanValue.replace(/"/g, '""')}"`;
     };
+
+    const nd = (value: string) => value?.trim() ? escapeCell(value) : '"No disponible"';
 
     const body = rows.map((row) => {
         const baseWhatsApp = readString(row, 'whatsapp');
@@ -166,24 +168,24 @@ function toCsv(rows: EnrichedLeadRow[]) {
             }
         }
 
-        const values = [
-            readString(row, 'nombre', 'Nombre'),
-            readString(row, 'rubro', 'Rubro'),
-            readString(row, 'direccion', 'Direccion'),
-            readString(row, 'localidad', 'Localidad'),
-            readString(row, 'provincia', 'Provincia'),
-            row.enriched_whatsapp || baseWhatsApp,
-            row.enriched_phone || basePhone,
-            row.enriched_email || baseEmail,
-            row.enriched_email2 || '',
-            row.enriched_website || baseWeb,
-            row.enriched_instagram || baseIG,
-            row.enriched_facebook || baseFB,
-            row.enriched_linkedin || '',
-            readString(row, 'horario', 'Horario', 'opening_hours')
+        const cells = [
+            escapeCell(readString(row, 'nombre', 'Nombre')),
+            escapeCell(readString(row, 'rubro', 'Rubro')),
+            escapeCell(readString(row, 'direccion', 'Direccion')),
+            escapeCell(readString(row, 'localidad', 'Localidad')),
+            escapeCell(readString(row, 'provincia', 'Provincia')),
+            nd(row.enriched_whatsapp || baseWhatsApp),
+            nd(row.enriched_phone || basePhone),
+            nd(row.enriched_email || baseEmail),
+            nd(row.enriched_email2 || ''),
+            nd(row.enriched_website || baseWeb),
+            nd(row.enriched_instagram || baseIG),
+            nd(row.enriched_facebook || baseFB),
+            nd(row.enriched_linkedin || ''),
+            escapeCell(readString(row, 'horario', 'Horario', 'opening_hours'))
         ];
 
-        return values.map(escapeCell).join(';');
+        return cells.join(';');
     });
 
     const csvContent = `${headers.join(';')}\n${body.join('\n')}`;
