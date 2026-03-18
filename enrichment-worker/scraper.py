@@ -146,6 +146,18 @@ def _extract_from_html(html: str) -> dict:
         if 8 <= len(clean) <= 15:
             result["whatsapps"].add(clean)
 
+    # Detect WhatsApp numbers next to WhatsApp icons (class="whatsapp" or similar)
+    # Many sites use <i class="icon-whatsapp"></i> <span>11 7620 2945</span>
+    for el in soup.find_all(class_=re.compile(r'whatsapp|wa-icon|fa-whatsapp|icon-whatsapp', re.I)):
+        # Check siblings and parent for phone numbers
+        parent = el.parent
+        if parent:
+            parent_text = parent.get_text(separator=" ")
+            for p in PHONE_REGEX_AR.findall(parent_text):
+                clean = re.sub(r"[^\d+]", "", p)
+                if 8 <= len(clean) <= 15:
+                    result["whatsapps"].add(clean)
+
     # Search raw HTML for emails in JS templates, inline data, or SPAs
     for e in EMAIL_REGEX.findall(html):
         if not _is_junk_email(e):
