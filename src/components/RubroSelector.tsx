@@ -27,6 +27,10 @@ const RUBROS = [
     { id: 'otro', label: 'Otro', icon: FaEllipsisH },
 ];
 
+// Triple the items for infinite loop illusion: [clone-end] [original] [clone-start]
+const LOOPED_RUBROS = [...RUBROS, ...RUBROS, ...RUBROS];
+const REAL_START = RUBROS.length; // Index where the real items start in LOOPED_RUBROS
+
 interface RubroSelectorProps {
     value: string;
     onChange: (rubro: string) => void;
@@ -34,32 +38,73 @@ interface RubroSelectorProps {
 
 export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [centerIndex, setCenterIndex] = useState(0);
+    const [centerIndex, setCenterIndex] = useState(REAL_START);
     const [showOtroModal, setShowOtroModal] = useState(false);
     const [otroText, setOtroText] = useState('');
-    const prevCenterRef = useRef(0);
+    const prevCenterRef = useRef(REAL_START);
+    const isDraggingRef = useRef(false);
+    const dragStartXRef = useRef(0);
+    const scrollStartRef = useRef(0);
+    const didDragRef = useRef(false);
+    const isRepositioningRef = useRef(false);
 
-    // Find the selected rubro index
     const selectedIndex = RUBROS.findIndex(r => r.id === value || r.label.toLowerCase() === value.toLowerCase());
     const isCustomRubro = !!value && selectedIndex === -1;
 
-    // Scroll to selected rubro on mount
-    useEffect(() => {
-        if (!containerRef.current) return;
-        const targetIdx = selectedIndex >= 0 ? selectedIndex : (isCustomRubro ? RUBROS.length - 1 : 0);
-        const items = containerRef.current.querySelectorAll<HTMLElement>('[data-rubro-item]');
-        const target = items[targetIdx];
+    // Get the real index (0..RUBROS.length-1) from looped index
+    const getRealIndex = (loopedIdx: number) => ((loopedIdx % RUBROS.length) + RUBROS.length) % RUBROS.length;
+
+    // Scroll to a looped index, centering it
+    const scrollToLoopedIndex = useCallback((idx: number, smooth = true) => {
+        const container = containerRef.current;
+        if (!container) return;
+        const items = container.querySelectorAll<HTMLElement>('[data-rubro-item]');
+        const target = items[idx];
         if (target) {
-            setTimeout(() => {
-                target.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
-            }, 100);
+            const targetLeft = target.offsetLeft - container.offsetWidth / 2 + target.offsetWidth / 2;
+            container.scrollTo({ left: targetLeft, behavior: smooth ? 'smooth' : 'auto' });
         }
+    }, []);
+
+    // On mount: scroll to the selected rubro (or first) in the middle set
+    useEffect(() => {
+        const targetReal = selectedIndex >= 0 ? selectedIndex : (isCustomRubro ? RUBROS.length - 1 : 0);
+        const targetLooped = REAL_START + targetReal;
+        setTimeout(() => scrollToLoopedIndex(targetLooped, false), 50);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Infinite loop: reposition when scrolled into clone zones
+    const repositionIfNeeded = useCallback(() => {
+        const container = containerRef.current;
+        if (!container || isRepositioningRef.current) return;
+
+        const items = container.querySelectorAll<HTMLElement>('[data-rubro-item]');
+        if (items.length === 0) return;
+
+        const itemWidth = items[0].offsetWidth + 12; // width + gap
+        const cloneZoneWidth = RUBROS.length * itemWidth;
+        const maxScroll = container.scrollWidth - container.offsetWidth;
+
+        // If scrolled into the first clone set (before real items)
+        if (container.scrollLeft < cloneZoneWidth * 0.3) {
+            isRepositioningRef.current = true;
+            container.scrollLeft += cloneZoneWidth;
+            isRepositioningRef.current = false;
+        }
+        // If scrolled into the last clone set (after real items)
+        else if (container.scrollLeft > maxScroll - cloneZoneWidth * 0.3) {
+            isRepositioningRef.current = true;
+            container.scrollLeft -= cloneZoneWidth;
+            isRepositioningRef.current = false;
+        }
+    }, []);
 
     // Handle scroll to detect center item
     const handleScroll = useCallback(() => {
+        if (isRepositioningRef.current) return;
         const container = containerRef.current;
         if (!container) return;
+
         const center = container.scrollLeft + container.offsetWidth / 2;
         const items = container.querySelectorAll<HTMLElement>('[data-rubro-item]');
         let closest = 0;
@@ -73,24 +118,72 @@ export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
             prevCenterRef.current = closest;
             setCenterIndex(closest);
         }
-    }, []);
 
-    // Arrow scroll
+        repositionIfNeeded();
+    }, [repositionIfNeeded]);
+
+    // Arrow navigation with loop
     const scrollTo = (direction: 'left' | 'right') => {
-        const newIndex = direction === 'left'
-            ? Math.max(0, centerIndex - 1)
-            : Math.min(RUBROS.length - 1, centerIndex + 1);
-        const container = containerRef.current;
-        if (!container) return;
-        const items = container.querySelectorAll<HTMLElement>('[data-rubro-item]');
-        const target = items[newIndex];
-        if (target) {
-            target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        const newIndex = direction === 'left' ? centerIndex - 1 : centerIndex + 1;
+        scrollToLoopedIndex(newIndex);
+    };
+
+    // Mouse drag handlers for desktop
+    const handleMouseDown = (e: React.MouseEvent) => {
+        isDraggingRef.current = true;
+        didDragRef.current = false;
+        dragStartXRef.current = e.clientX;
+        scrollStartRef.current = containerRef.current?.scrollLeft || 0;
+        if (containerRef.current) {
+            containerRef.current.style.cursor = 'grabbing';
+            containerRef.current.style.scrollSnapType = 'none'; // Disable snap during drag
         }
     };
 
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (!isDraggingRef.current || !containerRef.current) return;
+        const dx = e.clientX - dragStartXRef.current;
+        if (Math.abs(dx) > 3) didDragRef.current = true;
+        containerRef.current.scrollLeft = scrollStartRef.current - dx;
+    }, []);
+
+    const handleMouseUp = useCallback(() => {
+        if (!isDraggingRef.current) return;
+        isDraggingRef.current = false;
+        if (containerRef.current) {
+            containerRef.current.style.cursor = 'grab';
+            containerRef.current.style.scrollSnapType = 'x mandatory'; // Re-enable snap
+        }
+        // Snap to closest item after drag
+        setTimeout(() => {
+            const container = containerRef.current;
+            if (!container) return;
+            const center = container.scrollLeft + container.offsetWidth / 2;
+            const items = container.querySelectorAll<HTMLElement>('[data-rubro-item]');
+            let closest = 0;
+            let minDist = Infinity;
+            items.forEach((item, i) => {
+                const itemCenter = item.offsetLeft + item.offsetWidth / 2;
+                const dist = Math.abs(center - itemCenter);
+                if (dist < minDist) { minDist = dist; closest = i; }
+            });
+            scrollToLoopedIndex(closest);
+        }, 10);
+    }, [scrollToLoopedIndex]);
+
+    // Attach/detach mouse listeners on document
+    useEffect(() => {
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [handleMouseMove, handleMouseUp]);
+
     // Select a rubro
-    const selectRubro = (rubro: typeof RUBROS[number], index: number) => {
+    const selectRubro = (rubro: typeof RUBROS[number], loopedIndex: number) => {
+        if (didDragRef.current) return; // Don't select if was dragging
         if (rubro.id === 'otro') {
             setOtroText(isCustomRubro ? value : '');
             setShowOtroModal(true);
@@ -98,11 +191,7 @@ export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
         }
         onChange(rubro.id);
         localStorage.setItem('selected_rubro', rubro.id);
-        const container = containerRef.current;
-        if (container) {
-            const items = container.querySelectorAll<HTMLElement>('[data-rubro-item]');
-            items[index]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-        }
+        scrollToLoopedIndex(loopedIndex);
     };
 
     // Confirm custom rubro
@@ -121,12 +210,13 @@ export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
 
     return (
         <div className="text-center">
-            <label className="block text-sm font-black tracking-wide text-gray-700 dark:text-gray-300 uppercase mb-4">
+            <label className="block text-sm font-black tracking-wide text-gray-700 dark:text-gray-300 uppercase mb-1">
                 Rubro
             </label>
+            <p className="text-xs font-medium text-gray-400 dark:text-gray-500 mb-3">Rubros mas buscados</p>
 
             <div className="relative flex items-center justify-center">
-                {/* Left Arrow - desktop only */}
+                {/* Left Arrow */}
                 <button
                     onClick={() => scrollTo('left')}
                     className="hidden md:flex absolute left-0 z-20 w-10 h-10 items-center justify-center rounded-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-gray-700 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90"
@@ -139,27 +229,29 @@ export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
                 <div
                     ref={containerRef}
                     onScroll={handleScroll}
-                    className="flex gap-3 overflow-x-auto snap-x snap-mandatory scrollbar-hide touch-pan-x py-6 w-full md:mx-12"
+                    onMouseDown={handleMouseDown}
+                    className="flex gap-3 overflow-x-auto snap-x snap-mandatory scrollbar-hide touch-pan-x py-6 w-full md:mx-12 cursor-grab select-none"
                     style={{ paddingLeft: 'calc(50% - 3rem)', paddingRight: 'calc(50% - 3rem)' }}
                 >
-                    {RUBROS.map((rubro, i) => {
+                    {LOOPED_RUBROS.map((rubro, i) => {
                         const Icon = rubro.icon;
                         const isCentered = centerIndex === i;
+                        const dist = Math.abs(centerIndex - i);
                         const selected = isSelected(rubro);
 
                         return (
                             <div
-                                key={rubro.id}
+                                key={`${rubro.id}-${i}`}
                                 data-rubro-item=""
                                 data-index={i}
                                 onClick={() => selectRubro(rubro, i)}
                                 className={`
-                                    snap-center shrink-0 flex flex-col items-center justify-center cursor-pointer
+                                    snap-center shrink-0 flex flex-col items-center justify-center
                                     w-20 h-24 md:w-24 md:h-28 rounded-2xl
                                     transition-all duration-300 ease-out select-none
                                     ${isCentered
                                         ? 'scale-125 opacity-100'
-                                        : Math.abs(centerIndex - i) === 1
+                                        : dist === 1
                                             ? 'scale-100 opacity-70'
                                             : 'scale-85 opacity-40'
                                     }
@@ -178,7 +270,7 @@ export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
                     })}
                 </div>
 
-                {/* Right Arrow - desktop only */}
+                {/* Right Arrow */}
                 <button
                     onClick={() => scrollTo('right')}
                     className="hidden md:flex absolute right-0 z-20 w-10 h-10 items-center justify-center rounded-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-gray-700 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-90"
