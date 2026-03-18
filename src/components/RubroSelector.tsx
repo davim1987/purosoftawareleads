@@ -210,10 +210,9 @@ export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
 
     return (
         <div className="text-center">
-            <label className="block text-sm font-black tracking-wide text-gray-700 dark:text-gray-300 uppercase mb-1">
-                Rubro
+            <label className="block text-sm font-black tracking-wide text-gray-700 dark:text-gray-300 uppercase mb-4">
+                Rubros mas buscados
             </label>
-            <p className="text-xs font-medium text-gray-400 dark:text-gray-500 mb-3">Rubros mas buscados</p>
 
             <div className="relative flex items-center justify-center">
                 {/* Left Arrow */}
