@@ -229,7 +229,7 @@ export default function RubroSelector({ value, onChange }: RubroSelectorProps) {
                     ref={containerRef}
                     onScroll={handleScroll}
                     onMouseDown={handleMouseDown}
-                    className="flex gap-3 overflow-x-auto snap-x snap-mandatory scrollbar-hide touch-pan-x py-6 w-full md:mx-12 cursor-grab select-none"
+                    className="flex gap-6 overflow-x-auto snap-x snap-mandatory scrollbar-hide touch-pan-x py-6 w-full md:mx-12 cursor-grab select-none"
                     style={{ paddingLeft: 'calc(50% - 3rem)', paddingRight: 'calc(50% - 3rem)' }}
                 >
                     {LOOPED_RUBROS.map((rubro, i) => {
