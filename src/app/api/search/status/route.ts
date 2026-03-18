@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 import { supabase } from '@/lib/db';
 import { checkBotAndUpdateStatus } from '@/lib/search-utils';
+import { maskEmail, maskPhone, maskSocial } from '@/lib/utils';
 
 export async function GET(req: NextRequest) {
     try {
@@ -65,10 +66,21 @@ export async function GET(req: NextRequest) {
             if (updated) currentData = updated;
         }
 
+        // Mask sensitive data in preview results (before payment)
+        const rawResults = currentData.results || [];
+        const maskedResults = Array.isArray(rawResults) ? rawResults.map((lead: Record<string, string>) => ({
+            ...lead,
+            email: maskEmail(lead.email || ''),
+            telefono: maskPhone(lead.telefono || ''),
+            whatsapp: maskPhone(lead.whatsapp || lead.phone || ''),
+            instagram: maskSocial(lead.instagram || ''),
+            facebook: maskSocial(lead.facebook || ''),
+        })) : rawResults;
+
         return NextResponse.json({
             status: currentData.status,
             error_message: currentData.error_message,
-            results: currentData.results,
+            results: maskedResults,
             count: currentData.total_leads,
             bot_job_id: currentData.bot_job_id,
             rubro: currentData.rubro,
