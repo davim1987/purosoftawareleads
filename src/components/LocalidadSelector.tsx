@@ -106,7 +106,8 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                        {/* Sticky search bar */}
+                        <div className="sticky top-0 z-10 px-6 pt-4 pb-3 bg-white dark:bg-[#0B0F19] border-b border-gray-100 dark:border-gray-800">
                             <div className="relative">
                                 <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-base" />
                                 <input
@@ -117,7 +118,9 @@ const LocalidadSelector: React.FC<LocalidadSelectorProps> = ({
                                     className="w-full pl-12 pr-4 py-4 rounded-xl border-2 border-gray-100 dark:border-gray-800 bg-transparent text-base text-black dark:text-white font-medium placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:border-blue-500 dark:focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
                                 />
                             </div>
+                        </div>
 
+                        <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
                             <div className="space-y-6">
                                 {filteredByProvince.map(([provinceName, locs]) => (
                                     <div key={provinceName} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-transparent p-4">
