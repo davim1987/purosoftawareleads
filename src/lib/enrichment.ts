@@ -198,13 +198,14 @@ export async function fetchBusinessesForEnrichment(searchId: string): Promise<Bu
         const rec = lead as Record<string, unknown>;
         const key = readString(rec, 'id') || `${readString(rec, 'Nombre', 'nombre')}|${readString(rec, 'Localidad', 'localidad')}`;
 
-        // SKIP logic: if it already has an email, phone AND some social, we consider it "enriched enough"
+        // SKIP logic: only skip if it has ALL contact fields filled
         const hasEmail = isAvailable(readString(rec, 'email', 'Email'));
         const hasPhone = isAvailable(readString(rec, 'whatsapp', 'telefono', 'Telefono'));
         const hasSocial = isAvailable(readString(rec, 'instagram')) || isAvailable(readString(rec, 'facebook', 'Facebook'));
+        const hasWhatsapp = isAvailable(readString(rec, 'whatsapp'));
 
-        if (hasEmail && hasPhone && hasSocial) {
-            console.log(`[Consolidation] Lead "${readString(rec, 'Nombre', 'nombre')}" skipped (already has email, phone, and social).`);
+        if (hasEmail && hasPhone && hasSocial && hasWhatsapp) {
+            console.log(`[Consolidation] Lead "${readString(rec, 'Nombre', 'nombre')}" skipped (fully enriched).`);
             continue;
         }
 
