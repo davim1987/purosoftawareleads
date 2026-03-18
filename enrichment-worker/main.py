@@ -245,22 +245,24 @@ async def enrich_single_business(search_id: str, business: Business):
     )
 
     urls_to_scrape = []
+    scraped_domains = set()
 
-    # Store website source
+    # Always scrape existing website first (from Google Maps - most reliable)
+    if business.existing_website:
+        urls_to_scrape.append(business.existing_website)
+        scraped_domains.add(_extract_domain(business.existing_website))
+
+    # Store website source from Brave and scrape if different domain
     if brave_results["website"]:
         _store_source(search_id, business.id, "website", brave_results["website"])
-        urls_to_scrape.append(brave_results["website"])
+        brave_domain = _extract_domain(brave_results["website"])
+        if brave_domain not in scraped_domains:
+            urls_to_scrape.append(brave_results["website"])
+            scraped_domains.add(brave_domain)
 
     # Store social media sources
     for social in brave_results["social_urls"]:
         _store_source(search_id, business.id, social["type"], social["url"])
-
-    # Also scrape existing website if provided and different from Brave result
-    if business.existing_website:
-        existing_domain = _extract_domain(business.existing_website)
-        brave_domain = _extract_domain(brave_results["website"] or "")
-        if existing_domain and existing_domain != brave_domain:
-            urls_to_scrape.append(business.existing_website)
 
     # 2. Scrape each URL for contacts
     for url in urls_to_scrape[:3]:  # Cap at 3 URLs per business
