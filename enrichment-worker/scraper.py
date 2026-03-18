@@ -37,10 +37,17 @@ USER_AGENT = "PurosoftwareBot/1.0 (+https://purosoftware.com)"
 
 JUNK_EMAIL_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".css", ".js"}
 
+# Placeholder/example emails that are not real contacts
+JUNK_EMAIL_PREFIXES = {"ejemplo", "example", "test", "demo", "info@example", "user", "tu-email", "tuemail", "nombre"}
+
 
 def _is_junk_email(email: str) -> bool:
-    domain = email.split("@")[-1].lower()
+    email_lower = email.lower()
+    domain = email_lower.split("@")[-1]
+    prefix = email_lower.split("@")[0]
     if domain in JUNK_EMAIL_DOMAINS:
+        return True
+    if prefix in JUNK_EMAIL_PREFIXES:
         return True
     # Filter out image/asset filenames that look like emails (e.g. logo@2x.png)
     if any(email.lower().endswith(ext) for ext in JUNK_EMAIL_EXTENSIONS):
@@ -64,6 +71,8 @@ SOCIAL_LINK_DOMAINS = {
     "instagram.com": "instagram",
     "facebook.com": "facebook",
     "linkedin.com": "linkedin",
+    "youtube.com": "other",
+    "tiktok.com": "other",
 }
 
 
@@ -120,6 +129,22 @@ def _extract_from_html(html: str) -> dict:
     # Matches patterns like "telephone":"5492235552612" or 'phone':'5491112345678'
     for js_wa in re.finditer(r'["\'](?:telephone|phone|whatsapp)["\']:\s*["\'](\+?\d{10,15})["\']', html):
         result["whatsapps"].add(js_wa.group(1))
+
+    # Detect WhatsApp numbers near WhatsApp keywords/icons in text
+    # Handles cases like "WhatsApp: 11 7620 2945" or "📱 11 7620-2945"
+    wa_text_regex = re.compile(
+        r'(?:whatsapp|wapp|wa\b)\s*[:\-]?\s*(\+?[\d\s\-().]{8,20})',
+        re.IGNORECASE,
+    )
+    for wa_text in wa_text_regex.finditer(text):
+        clean = re.sub(r"[^\d+]", "", wa_text.group(1))
+        if 8 <= len(clean) <= 15:
+            result["whatsapps"].add(clean)
+    # Also check raw HTML for whatsapp keyword + number patterns
+    for wa_html in wa_text_regex.finditer(html):
+        clean = re.sub(r"[^\d+]", "", wa_html.group(1))
+        if 8 <= len(clean) <= 15:
+            result["whatsapps"].add(clean)
 
     # Search raw HTML for emails in JS templates, inline data, or SPAs
     for e in EMAIL_REGEX.findall(html):
