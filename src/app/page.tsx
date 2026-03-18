@@ -560,6 +560,7 @@ function SuccessModal({
 }
 
 function LeadsApp() {
+    const cancelledRef = React.useRef(false);
     const [rubro, setRubro] = useState('');
     const [provincia, setProvincia] = useState('');
     const [localidades, setLocalidades] = useState<string[]>([]);
@@ -748,7 +749,7 @@ function LeadsApp() {
             }, 600);
 
             const pollStatus = async () => {
-                if (!searchId) return;
+                if (!searchId || cancelledRef.current) return;
                 console.log(`[Frontend] Polling status for searchId: ${searchId}`);
                 try {
                     const response = await axios.get(`/api/search/status?id=${searchId}`);
@@ -791,6 +792,8 @@ function LeadsApp() {
                     }
 
                     if (status === 'completed') {
+                        if (cancelledRef.current) return; // User cancelled, ignore results
+
                         setIsInitialSearch(false);
                         setIsLoading(false);
                         setDisplayProgress(100); // Jump to 100%
@@ -1102,6 +1105,7 @@ function LeadsApp() {
     // 4. Reset/Cancel Search Logic
     const handleResetSearch = () => {
         const currentSearchId = searchId;
+        cancelledRef.current = true;
 
         // Internal state resets
         setIsInitialSearch(false);
@@ -1158,6 +1162,8 @@ function LeadsApp() {
             setError('Por favor complete todos los campos.');
             return;
         }
+
+        cancelledRef.current = false; // Reset cancel flag for new search
 
         if (!fromPolling) {
             const currentSearchId = searchId;
