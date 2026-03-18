@@ -9,6 +9,7 @@ import MercadoPagoButton from '@/components/MercadoPagoButton';
 import LocalidadSelector from '@/components/LocalidadSelector';
 import LeadTable from '@/components/LeadTable';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import RubroSelector from '@/components/RubroSelector';
 
 interface Lead {
     id: string;
@@ -638,6 +639,12 @@ function LeadsApp() {
             }
         };
         loadLocalidades();
+
+        // Restore saved rubro from localStorage
+        const savedRubro = localStorage.getItem('selected_rubro');
+        if (savedRubro && !rubro) {
+            setRubro(savedRubro);
+        }
     }, []);
 
     // 1. Rehydration: Load active search from localStorage or URL
@@ -1133,6 +1140,7 @@ function LeadsApp() {
 
         // Persistent storage cleanup
         localStorage.removeItem('active_search');
+        localStorage.removeItem('selected_rubro');
         if (currentSearchId) {
             localStorage.removeItem(`pending_purchase_${currentSearchId}`);
             localStorage.removeItem(`last_payment_id_${currentSearchId}`);
@@ -1293,22 +1301,10 @@ function LeadsApp() {
                 <div className="bg-white dark:bg-[#111827] p-8 rounded-3xl shadow-2xl shadow-blue-900/5 dark:shadow-none border border-gray-100 dark:border-gray-800">
                     <div className="max-w-2xl mx-auto space-y-6">
                         {/* Rubro */}
-                        <div className="text-center">
-                            <label htmlFor="rubro" className="block text-sm font-black tracking-wide text-gray-700 dark:text-gray-300 uppercase mb-2">
-                                Rubro
-                            </label>
-                            <input
-                                type="text"
-                                id="rubro"
-                                value={rubro}
-                                onChange={(e) => { setRubro(e.target.value); if (error) setError(null); }}
-                                placeholder="Ej: hamburguesería, abogados, panadería..."
-                                className="w-full rounded-2xl border-2 border-blue-200 dark:border-gray-700 bg-blue-50/50 dark:bg-[#0B0F19] px-5 py-4 text-center text-xl font-black text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-600 outline-none transition focus:border-blue-500 dark:focus:border-blue-500 focus:bg-white dark:focus:bg-[#0B0F19] focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30"
-                            />
-                            <p className="mt-2 text-xs font-medium text-gray-500 dark:text-gray-500">
-                                Escribí el tipo de negocio que querés buscar.
-                            </p>
-                        </div>
+                        <RubroSelector
+                            value={rubro}
+                            onChange={(val) => { setRubro(val); if (error) setError(null); }}
+                        />
                     </div>
 
                     {/* Localidades */}
