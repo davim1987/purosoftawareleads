@@ -150,9 +150,21 @@ function toCsv(rows: EnrichedLeadRow[]) {
         const baseWhatsApp = readString(row, 'whatsapp');
         const basePhone = readString(row, 'telefono', 'Telefono');
         const baseEmail = readString(row, 'email', 'Email');
-        const baseWeb = readString(row, 'web', 'Web');
-        const baseIG = readString(row, 'instagram', 'Instagram');
-        const baseFB = readString(row, 'facebook', 'Facebook');
+        let baseWeb = readString(row, 'web', 'Web');
+        let baseIG = readString(row, 'instagram', 'Instagram');
+        let baseFB = readString(row, 'facebook', 'Facebook');
+
+        // Reclassify social URLs incorrectly stored as website (legacy data)
+        if (baseWeb) {
+            const webLower = baseWeb.toLowerCase();
+            if (webLower.includes('instagram.com')) {
+                if (!baseIG) baseIG = baseWeb;
+                baseWeb = '';
+            } else if (webLower.includes('facebook.com') || webLower.includes('fb.com')) {
+                if (!baseFB) baseFB = baseWeb;
+                baseWeb = '';
+            }
+        }
 
         const values = [
             readString(row, 'nombre', 'Nombre'),

@@ -292,6 +292,18 @@ export async function POST(req: NextRequest) {
                 horario: readString(lead, 'horario', 'Horario', 'opening_hours')
             };
 
+            // Reclassify social URLs stored as website
+            if (mapped.web) {
+                const webLower = mapped.web.toLowerCase();
+                if (webLower.includes('instagram.com')) {
+                    if (!mapped.instagram) mapped.instagram = mapped.web;
+                    mapped.web = null;
+                } else if (webLower.includes('facebook.com') || webLower.includes('fb.com')) {
+                    if (!mapped.facebook) mapped.facebook = mapped.web;
+                    mapped.web = null;
+                }
+            }
+
             if (!mapped.instagram) mapped.instagram = extractSocialHandle(mapped.web, 'instagram');
             if (!mapped.facebook) mapped.facebook = extractSocialHandle(mapped.web, 'facebook');
 

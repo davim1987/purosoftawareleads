@@ -306,13 +306,27 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                     const mail = findValue(l, 'extended_emails', 'email', 'emails', 'email address', 'e-mail');
                         const phone = findValue(l, 'phone', 'phone number', 'phone_number', 'telefono', 'tel');
                         const waNumber = findValue(l, 'whatsapp', 'whatsApp', 'wa_number');
-                        const website = findValue(l, 'website', 'web', 'website url', 'url', 'site');
+                        let website = findValue(l, 'website', 'web', 'website url', 'url', 'site');
                         const instagram = findValue(l, 'instagram', 'instagram handle', 'ig');
                         const facebook = findValue(l, 'facebook', 'facebook page', 'fb');
 
+                        // Reclassify social URLs that were stored as website
+                        let reclassifiedIg: string | null = null;
+                        let reclassifiedFb: string | null = null;
+                        if (website) {
+                            const webLower = website.toLowerCase();
+                            if (webLower.includes('instagram.com')) {
+                                reclassifiedIg = website;
+                                website = null;
+                            } else if (webLower.includes('facebook.com') || webLower.includes('fb.com')) {
+                                reclassifiedFb = website;
+                                website = null;
+                            }
+                        }
+
                         const searchFields = [l.website, l.web, l.webcity, l.emails, l.extended_emails, l.description].filter(Boolean);
-                        let ig = instagram || 'No disponible';
-                        let fb = facebook || 'No disponible';
+                        let ig = instagram || reclassifiedIg || 'No disponible';
+                        let fb = facebook || reclassifiedFb || 'No disponible';
 
                         if (ig === 'No disponible') {
                             for (const f of searchFields) {
