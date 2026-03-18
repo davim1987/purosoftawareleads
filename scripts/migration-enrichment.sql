@@ -71,3 +71,6 @@ ALTER TABLE public.enrichment_jobs ADD COLUMN IF NOT EXISTS current_business_nam
 -- Add telefono column to leads_free_search (separate from whatsapp)
 ALTER TABLE public.leads_free_search ADD COLUMN IF NOT EXISTS telefono TEXT;
 
+-- Add horario column to leads_free_search (business hours from Google Maps)
+ALTER TABLE public.leads_free_search ADD COLUMN IF NOT EXISTS horario TEXT;
+

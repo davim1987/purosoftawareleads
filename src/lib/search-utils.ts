@@ -376,6 +376,7 @@ export async function checkBotAndUpdateStatus(searchId: string) {
                             web: leadObj.web,
                             instagram: leadObj.instagram === 'No disponible' ? null : leadObj.instagram,
                             facebook: leadObj.facebook === 'No disponible' ? null : leadObj.facebook,
+                            horario: leadObj.horario === 'No disponible' ? null : leadObj.horario,
                             updated_at: new Date().toISOString()
                         };
                     }).filter((l): l is NonNullable<typeof l> => l !== null);
