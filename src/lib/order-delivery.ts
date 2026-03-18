@@ -148,6 +148,16 @@ function toCsv(rows: EnrichedLeadRow[]) {
 
     const nd = (value: string) => value?.trim() ? escapeCell(value) : '"No disponible"';
 
+    // Force Excel to treat phone numbers as text (prevents 5.49116E+12 scientific notation)
+    const phoneCell = (value: string) => {
+        const clean = (value || '').trim();
+        if (!clean || clean.toLowerCase() === 'no disponible' || clean.toLowerCase() === 'n/a' || clean === '-') {
+            return '"No disponible"';
+        }
+        // Prefix with single quote to force text in Excel
+        return `"'${clean.replace(/"/g, '""')}"`;
+    };
+
     const body = rows.map((row) => {
         const baseWhatsApp = readString(row, 'whatsapp');
         const basePhone = readString(row, 'telefono', 'Telefono');
@@ -174,8 +184,8 @@ function toCsv(rows: EnrichedLeadRow[]) {
             escapeCell(readString(row, 'direccion', 'Direccion')),
             escapeCell(readString(row, 'localidad', 'Localidad')),
             escapeCell(readString(row, 'provincia', 'Provincia')),
-            nd(row.enriched_whatsapp || baseWhatsApp),
-            nd(row.enriched_phone || basePhone),
+            phoneCell(row.enriched_whatsapp || baseWhatsApp),
+            phoneCell(row.enriched_phone || basePhone),
             nd(row.enriched_email || baseEmail),
             nd(row.enriched_email2 || ''),
             nd(row.enriched_website || baseWeb),
