@@ -190,13 +190,16 @@ export async function POST(req: NextRequest) {
 
             try {
                 // Create initial tracking record
+                // CRITICAL: 'localidad' must contain ONLY the localities sent to bot (locsToSearch)
+                // so that search-utils.ts can correctly map job[i] → locality[i].
+                // 'all_localidades' stores the full list for frontend rehydration.
                 await supabase.from('search_tracking').upsert({
                     id: searchId,
                     status: leads.length > 0
                         ? `Buscando ${locsToSearch.length} zonas faltantes...`
                         : `Geolocalizando ${locsToSearch.length} zonas...`,
                     rubro,
-                    localidad: localidades.join(', '), // All requested localities
+                    localidad: locsToSearch.join(', '),
                     provincia: provincia || 'Buenos Aires'
                 });
 

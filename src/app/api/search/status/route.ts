@@ -77,6 +77,19 @@ export async function GET(req: NextRequest) {
             facebook: maskSocial(lead.facebook || ''),
         })) : rawResults;
 
+        // Get full locality list: try order first (has all), fallback to tracking (has only bot locs)
+        let allLocalidades: string[] = [];
+        const { data: orderLocs } = await supabase
+            .from('orders')
+            .select('localidades')
+            .eq('search_id', searchId)
+            .maybeSingle();
+        if (orderLocs?.localidades && Array.isArray(orderLocs.localidades) && orderLocs.localidades.length > 0) {
+            allLocalidades = orderLocs.localidades;
+        } else if (currentData.localidad) {
+            allLocalidades = currentData.localidad.split(', ').map((l: string) => l.trim());
+        }
+
         return NextResponse.json({
             status: currentData.status,
             error_message: currentData.error_message,
@@ -84,7 +97,7 @@ export async function GET(req: NextRequest) {
             count: currentData.total_leads,
             bot_job_id: currentData.bot_job_id,
             rubro: currentData.rubro,
-            localidades: currentData.localidad ? currentData.localidad.split(', ') : [],
+            localidades: allLocalidades,
             deliveryStatus
         });
 

@@ -188,13 +188,16 @@ export async function getGeolocation(localidad: string, provincia: string) {
 
         console.log(`Geolocating ${localidad}, ${provincia} via Nominatim...`);
 
-        const queries = cleanProvincia
-            ? [
-                `${localidad}, ${cleanProvincia}, Argentina`,
-                `${localidad}, ${provinceFallback}, Argentina`,
-                `${localidad}, Argentina`
-            ]
-            : [`${localidad}, Argentina`];
+        // Build unique query list (avoid duplicate Nominatim calls)
+        const querySet = new Set<string>();
+        if (cleanProvincia) {
+            querySet.add(`${localidad}, ${cleanProvincia}, Argentina`);
+            if (provinceFallback !== cleanProvincia) {
+                querySet.add(`${localidad}, ${provinceFallback}, Argentina`);
+            }
+        }
+        querySet.add(`${localidad}, Argentina`);
+        const queries = Array.from(querySet);
 
         for (const rawQuery of queries) {
             const encodedQuery = encodeURIComponent(rawQuery);
@@ -207,10 +210,15 @@ export async function getGeolocation(localidad: string, provincia: string) {
                 const lat = parseFloat(result.lat);
                 const lon = parseFloat(result.lon);
 
-                // Save to cache with the most descriptive info we have
+                // Save to cache - delete old entries for same locality+province first to avoid duplicates
+                const cacheProvince = cleanProvincia || 'Argentina';
+                await supabase.from('geolocalizacion')
+                    .delete()
+                    .eq('localidad', localidad)
+                    .eq('provincia', cacheProvince);
                 await supabase.from('geolocalizacion').insert({
                     localidad,
-                    provincia: cleanProvincia || 'Argentina',
+                    provincia: cacheProvince,
                     latitud: lat,
                     longitud: lon,
                     partido: result.display_name
