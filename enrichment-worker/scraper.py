@@ -1,4 +1,5 @@
 import re
+import json
 from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
@@ -74,6 +75,143 @@ SOCIAL_LINK_DOMAINS = {
     "youtube.com": "other",
     "tiktok.com": "other",
 }
+
+
+def _extract_structured_data(soup: BeautifulSoup, html: str, result: dict):
+    """Extract contact data from structured sources: JSON-LD, meta tags, data-* attrs, noscript, script configs."""
+
+    # 1. JSON-LD / Schema.org (most reliable structured data)
+    for script_tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script_tag.string or "")
+            # Handle both single objects and arrays
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                _extract_from_jsonld(item, result)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 2. Meta tags (OG, Twitter, generic)
+    meta_phone_props = ["og:phone_number", "phone", "telephone", "tel"]
+    meta_email_props = ["og:email", "email", "contact:email"]
+    for meta in soup.find_all("meta"):
+        prop = (meta.get("property") or meta.get("name") or "").lower()
+        content = (meta.get("content") or "").strip()
+        if not content:
+            continue
+        if prop in meta_phone_props:
+            clean = re.sub(r"[^\d+]", "", content)
+            if 8 <= len(clean) <= 15:
+                result["phones"].add(clean)
+        elif prop in meta_email_props:
+            if "@" in content and not _is_junk_email(content):
+                result["emails"].add(content)
+        elif prop == "description":
+            # Extract phones/emails from meta description
+            for e in EMAIL_REGEX.findall(content):
+                if not _is_junk_email(e):
+                    result["emails"].add(e)
+
+    # 3. data-* attributes (data-phone, data-whatsapp, data-email, etc.)
+    data_phone_attrs = ["data-phone", "data-telephone", "data-tel", "data-celular", "data-mobile"]
+    data_wa_attrs = ["data-whatsapp", "data-wa", "data-wanumber", "data-wa-number"]
+    data_email_attrs = ["data-email", "data-mail", "data-correo"]
+    for el in soup.find_all(True):
+        for attr in data_phone_attrs:
+            val = el.get(attr)
+            if val:
+                clean = re.sub(r"[^\d+]", "", str(val))
+                if 8 <= len(clean) <= 15:
+                    result["phones"].add(clean)
+        for attr in data_wa_attrs:
+            val = el.get(attr)
+            if val:
+                clean = re.sub(r"[^\d+]", "", str(val))
+                if 8 <= len(clean) <= 15:
+                    result["whatsapps"].add(clean)
+        for attr in data_email_attrs:
+            val = el.get(attr)
+            if val and "@" in str(val) and not _is_junk_email(str(val)):
+                result["emails"].add(str(val).strip())
+
+    # 4. Inline <script> widget configs (JoinChat, Elfsight, WP plugins)
+    widget_phone_regex = re.compile(
+        r'["\'](?:phone|telephone|whatsapp|wa_number|whatsapp_number|celular|mobile|numero)["\']'
+        r'\s*[:=]\s*["\'](\+?[\d\s\-().]{8,20})["\']',
+        re.IGNORECASE,
+    )
+    widget_email_regex = re.compile(
+        r'["\'](?:email|correo|contact_email|mail)["\']'
+        r'\s*[:=]\s*["\']([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})["\']',
+        re.IGNORECASE,
+    )
+    for script_tag in soup.find_all("script"):
+        script_text = script_tag.string or ""
+        if not script_text.strip():
+            continue
+        for m in widget_phone_regex.finditer(script_text):
+            clean = re.sub(r"[^\d+]", "", m.group(1))
+            if 8 <= len(clean) <= 15:
+                result["whatsapps"].add(clean)
+        for m in widget_email_regex.finditer(script_text):
+            email = m.group(1)
+            if not _is_junk_email(email):
+                result["emails"].add(email)
+
+    # 5. <noscript> fallback content
+    for noscript in soup.find_all("noscript"):
+        ns_text = noscript.get_text(separator=" ")
+        for e in EMAIL_REGEX.findall(ns_text):
+            if not _is_junk_email(e):
+                result["emails"].add(e)
+        for p in PHONE_REGEX_AR.findall(ns_text):
+            clean = re.sub(r"[^\d+]", "", p)
+            if 8 <= len(clean) <= 15:
+                result["phones"].add(clean)
+
+
+def _extract_from_jsonld(item: dict, result: dict):
+    """Recursively extract contact data from a JSON-LD object."""
+    if not isinstance(item, dict):
+        return
+
+    # Phone
+    for key in ("telephone", "phone", "contactPoint"):
+        val = item.get(key)
+        if isinstance(val, str):
+            clean = re.sub(r"[^\d+]", "", val)
+            if 8 <= len(clean) <= 15:
+                result["phones"].add(clean)
+        elif isinstance(val, dict):
+            _extract_from_jsonld(val, result)
+        elif isinstance(val, list):
+            for v in val:
+                if isinstance(v, str):
+                    clean = re.sub(r"[^\d+]", "", v)
+                    if 8 <= len(clean) <= 15:
+                        result["phones"].add(clean)
+                elif isinstance(v, dict):
+                    _extract_from_jsonld(v, result)
+
+    # Email
+    for key in ("email",):
+        val = item.get(key)
+        if isinstance(val, str) and "@" in val and not _is_junk_email(val):
+            result["emails"].add(val.strip())
+
+    # Social / URL
+    for key in ("url", "sameAs"):
+        val = item.get(key)
+        urls = val if isinstance(val, list) else ([val] if isinstance(val, str) else [])
+        for u in urls:
+            if not isinstance(u, str):
+                continue
+            u_lower = u.lower()
+            if "instagram.com" in u_lower or "facebook.com" in u_lower:
+                for social_domain, social_type in SOCIAL_LINK_DOMAINS.items():
+                    if social_domain in u_lower:
+                        result["social"].append({"type": social_type, "url": u})
+                        break
 
 
 def _extract_from_html(html: str) -> dict:
@@ -187,6 +325,9 @@ def _extract_from_html(html: str) -> dict:
                 seen_social_domains.add(social_domain)
                 result["social"].append({"type": social_type, "url": href})
                 break
+
+    # Extract from structured sources (JSON-LD, meta tags, data-* attrs, script configs, noscript)
+    _extract_structured_data(soup, html, result)
 
     # Discover contact-related links on this page
     contact_links = set()
