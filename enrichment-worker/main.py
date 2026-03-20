@@ -29,6 +29,11 @@ CALLBACK_URL = os.getenv("CALLBACK_URL", "http://localhost:3000/api/enrichment/c
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
+# Scraping limits (configurable via env)
+MAX_URLS_PER_BUSINESS = int(os.getenv("MAX_URLS_PER_BUSINESS", "5"))
+MAX_SCRAPE_RETRIES = int(os.getenv("MAX_SCRAPE_RETRIES", "1"))
+SCRAPE_RETRY_DELAY = float(os.getenv("SCRAPE_RETRY_DELAY", "2.0"))
+
 # --- Startup diagnostics ---
 print("=" * 60)
 print("[Worker] STARTUP DIAGNOSTICS")
@@ -37,14 +42,16 @@ print(f"[Worker] SUPABASE_SERVICE_ROLE_KEY = {'SET (' + SUPABASE_KEY[:20] + '...
 print(f"[Worker] PY_WORKER_SECRET = {'SET' if PY_WORKER_SECRET else 'EMPTY/MISSING'}")
 print(f"[Worker] CALLBACK_URL = {CALLBACK_URL}")
 print(f"[Worker] BRAVE_API_KEY = {'SET' if os.getenv('BRAVE_API_KEY') else 'EMPTY/MISSING'}")
+print(f"[Worker] MAX_URLS_PER_BUSINESS = {MAX_URLS_PER_BUSINESS}")
+print(f"[Worker] MAX_SCRAPE_RETRIES = {MAX_SCRAPE_RETRIES}")
 print("=" * 60)
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 if supabase:
-    print("[Worker] ✅ Supabase client created successfully")
+    print("[Worker] Supabase client created successfully")
 else:
-    print("[Worker] ❌ Supabase client NOT created - SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is empty")
+    print("[Worker] Supabase client NOT created - SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is empty")
 
 
 def now_iso():
@@ -90,6 +97,8 @@ async def health():
         "worker_secret_set": bool(PY_WORKER_SECRET),
         "brave_key_set": bool(os.getenv("BRAVE_API_KEY")),
         "callback_url": CALLBACK_URL,
+        "max_urls_per_business": MAX_URLS_PER_BUSINESS,
+        "max_scrape_retries": MAX_SCRAPE_RETRIES,
     }
 
 
@@ -129,6 +138,7 @@ async def test_scrape(request: TestScrapeRequest, authorization: str = Header(..
                 "phones": normalized_phones,
                 "whatsapps": normalized_whatsapps,
             },
+            "llm_action_proof": contacts.get("llm_raw_extraction", {})
         }
     except Exception as e:
         return {"error": str(e), "url": request.url}
@@ -153,10 +163,10 @@ async def process_enrichment(request: EnrichRequest):
     search_id = request.search_id
     total = len(request.businesses)
     processed = 0
-    
+
     # Use a semaphore to limit concurrency (e.g., 5 businesses at a time)
     semaphore = asyncio.Semaphore(5)
-    
+
     print(f"[Worker] Starting enrichment job {job_id} for search {search_id} ({total} businesses) [PARALLEL MODE]")
 
     async def enriched_wrapped(business: Business):
@@ -219,8 +229,59 @@ async def process_enrichment(request: EnrichRequest):
         await send_callback(job_id, search_id, "failed", processed, total, error_msg)
 
 
+def _prioritize_urls(urls: list[str], existing_website: Optional[str] = None) -> list[str]:
+    """
+    Prioritize URLs for scraping. Order:
+    1. Business's own website (from Google Maps)
+    2. URLs with contact-related keywords in path
+    3. Other URLs
+    """
+    contact_keywords = {"contact", "contacto", "about", "nosotros", "empresa", "info"}
+    priority_high = []
+    priority_medium = []
+    priority_low = []
+
+    for url in urls:
+        path = urlparse(url).path.lower()
+        if existing_website and _extract_domain(url) == _extract_domain(existing_website):
+            priority_high.append(url)
+        elif any(kw in path for kw in contact_keywords):
+            priority_medium.append(url)
+        else:
+            priority_low.append(url)
+
+    return priority_high + priority_medium + priority_low
+
+
+async def _scrape_with_retry(url: str) -> Optional[dict]:
+    """Scrape a URL with retry logic on failure."""
+    for attempt in range(1 + MAX_SCRAPE_RETRIES):
+        try:
+            contacts = await scrape_url(url)
+            # Check if we got any useful data
+            has_data = (
+                contacts.get("emails") or
+                contacts.get("phones") or
+                contacts.get("whatsapps") or
+                contacts.get("social")
+            )
+            if has_data or attempt >= MAX_SCRAPE_RETRIES:
+                return contacts
+            # No data found, retry might help (transient issue)
+            print(f"[Worker] No data from {url}, retrying ({attempt + 1}/{MAX_SCRAPE_RETRIES})...")
+            await asyncio.sleep(SCRAPE_RETRY_DELAY)
+        except Exception as e:
+            if attempt < MAX_SCRAPE_RETRIES:
+                print(f"[Worker] Scrape failed for {url} (attempt {attempt + 1}), retrying: {e}")
+                await asyncio.sleep(SCRAPE_RETRY_DELAY)
+            else:
+                print(f"[Worker] Scrape failed for {url} after {attempt + 1} attempts: {e}")
+                return None
+    return None
+
+
 async def enrich_single_business(search_id: str, business: Business):
-    """Enrich a single business: search Brave, scrape URLs, store results."""
+    """Enrich a single business: store existing data, search Brave, scrape URLs, store results."""
     if not supabase:
         print("[Worker] No Supabase client configured, skipping DB operations")
         return
@@ -230,7 +291,30 @@ async def enrich_single_business(search_id: str, business: Business):
         f"provincia='{business.provincia or ''}' rubro='{business.rubro or ''}'"
     )
 
-    # 1. Search Brave for website + social media URLs
+    # --- Step 0: Store existing data from Google Maps as high-confidence contacts ---
+    if business.existing_phone:
+        normalized_phone, is_valid = normalize_phone(business.existing_phone)
+        if normalized_phone:
+            _store_contact(
+                search_id, business.id, "phone",
+                business.existing_phone, normalized_phone, is_valid,
+                0.95,  # High confidence: from Google Maps
+                "google_maps",
+            )
+            print(f"[Worker] Stored existing phone from Maps: {normalized_phone}")
+
+    if business.existing_email:
+        normalized_email, is_valid = normalize_email(business.existing_email)
+        if normalized_email:
+            _store_contact(
+                search_id, business.id, "email",
+                business.existing_email, normalized_email, is_valid,
+                0.95,  # High confidence: from Google Maps
+                "google_maps",
+            )
+            print(f"[Worker] Stored existing email from Maps: {normalized_email}")
+
+    # --- Step 1: Search Brave for website + social media URLs ---
     brave_results = await search_business(
         business.name,
         business.locality,
@@ -244,6 +328,31 @@ async def enrich_single_business(search_id: str, business: Business):
         f"social={len(brave_results['social_urls'])}, all_urls={len(brave_results['all_urls'])}"
     )
 
+    # --- Step 1b: Store contacts extracted from Brave snippets ---
+    snippet_contacts = brave_results.get("snippet_contacts", {})
+    for raw_email in snippet_contacts.get("emails", []):
+        normalized, is_valid = normalize_email(raw_email)
+        if normalized:
+            _store_contact(
+                search_id, business.id, "email",
+                raw_email, normalized, is_valid,
+                0.6,  # Medium confidence: from search snippet
+                "brave_snippet",
+            )
+            print(f"[Worker] Stored snippet email: {normalized}")
+
+    for raw_phone in snippet_contacts.get("phones", []):
+        normalized, is_valid = normalize_phone(raw_phone)
+        if normalized:
+            _store_contact(
+                search_id, business.id, "phone",
+                raw_phone, normalized, is_valid,
+                0.6,  # Medium confidence: from search snippet
+                "brave_snippet",
+            )
+            print(f"[Worker] Stored snippet phone: {normalized}")
+
+    # --- Step 2: Build URL list for scraping ---
     urls_to_scrape = []
     scraped_domains = set()
 
@@ -260,49 +369,65 @@ async def enrich_single_business(search_id: str, business: Business):
             urls_to_scrape.append(brave_results["website"])
             scraped_domains.add(brave_domain)
 
+    # Add extra URLs from Brave that look promising (contact pages, sub-pages of site)
+    for extra_url in brave_results.get("all_urls", []):
+        extra_domain = _extract_domain(extra_url)
+        # Skip social and directory domains
+        if any(sd in extra_domain for sd in ("instagram.com", "facebook.com", "linkedin.com", "twitter.com", "x.com")):
+            continue
+        if extra_domain in scraped_domains:
+            # Allow same-domain if the path has contact keywords
+            path_lower = urlparse(extra_url).path.lower()
+            if any(kw in path_lower for kw in ("contact", "contacto", "about", "nosotros")):
+                urls_to_scrape.append(extra_url)
+            continue
+        if extra_domain not in scraped_domains:
+            urls_to_scrape.append(extra_url)
+            scraped_domains.add(extra_domain)
+
     # Store social media sources
     for social in brave_results["social_urls"]:
         _store_source(search_id, business.id, social["type"], social["url"])
 
-    # 2. Scrape each URL for contacts
-    for url in urls_to_scrape[:3]:  # Cap at 3 URLs per business
-        try:
-            contacts = await scrape_url(url)
+    # --- Step 3: Prioritize and scrape URLs ---
+    urls_to_scrape = _prioritize_urls(urls_to_scrape, business.existing_website)
 
-            # Store emails
-            for raw_email in contacts["emails"]:
-                normalized, is_valid = normalize_email(raw_email)
-                confidence = compute_confidence("email", is_valid, url)
-                _store_contact(
-                    search_id, business.id, "email",
-                    raw_email, normalized, is_valid, confidence, url,
-                )
+    for url in urls_to_scrape[:MAX_URLS_PER_BUSINESS]:
+        contacts = await _scrape_with_retry(url)
+        if contacts is None:
+            continue
 
-            # Store phones
-            for raw_phone in contacts["phones"]:
-                normalized, is_valid = normalize_phone(raw_phone)
-                confidence = compute_confidence("phone", is_valid, url)
-                _store_contact(
-                    search_id, business.id, "phone",
-                    raw_phone, normalized, is_valid, confidence, url,
-                )
+        # Store emails
+        for raw_email in contacts["emails"]:
+            normalized, is_valid = normalize_email(raw_email)
+            confidence = compute_confidence("email", is_valid, url)
+            _store_contact(
+                search_id, business.id, "email",
+                raw_email, normalized, is_valid, confidence, url,
+            )
 
-            # Store WhatsApp numbers
-            for raw_wa in contacts["whatsapps"]:
-                normalized, is_valid = normalize_whatsapp(raw_wa)
-                confidence = compute_confidence("whatsapp", is_valid, url)
-                _store_contact(
-                    search_id, business.id, "whatsapp",
-                    raw_wa, normalized, is_valid, confidence, url,
-                )
+        # Store phones
+        for raw_phone in contacts["phones"]:
+            normalized, is_valid = normalize_phone(raw_phone)
+            confidence = compute_confidence("phone", is_valid, url)
+            _store_contact(
+                search_id, business.id, "phone",
+                raw_phone, normalized, is_valid, confidence, url,
+            )
 
-            # Store social media links found in the page HTML
-            for social in contacts.get("social", []):
-                _store_source(search_id, business.id, social["type"], social["url"])
-                print(f"[Worker] Found {social['type']} from HTML scrape: {social['url']}")
+        # Store WhatsApp numbers
+        for raw_wa in contacts["whatsapps"]:
+            normalized, is_valid = normalize_whatsapp(raw_wa)
+            confidence = compute_confidence("whatsapp", is_valid, url)
+            _store_contact(
+                search_id, business.id, "whatsapp",
+                raw_wa, normalized, is_valid, confidence, url,
+            )
 
-        except Exception as e:
-            print(f"[Worker] Error scraping {url}: {e}")
+        # Store social media links found in the page HTML
+        for social in contacts.get("social", []):
+            _store_source(search_id, business.id, social["type"], social["url"])
+            print(f"[Worker] Found {social['type']} from HTML scrape: {social['url']}")
 
     # Small delay to avoid hammering servers
     await asyncio.sleep(0.5)
@@ -367,7 +492,7 @@ def _store_contact(
         ).execute()
 
         # Back-fill leads_free_search table
-        if is_valid and confidence >= 0.7:
+        if is_valid and confidence >= 0.6:
             update_data = {}
             if contact_type == "email":
                 update_data["email"] = normalized_value
